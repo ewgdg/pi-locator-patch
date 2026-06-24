@@ -1,6 +1,6 @@
 # pi-hashline-patch
 
-Fresh Pi extension package for stable hashline reads and hash-only patch apply.
+Pi extension package for stable hashline reads and hash-only patch apply.
 
 ## Tools
 
@@ -48,6 +48,17 @@ Patch syntax:
 ```
 
 Each hunk is located by exact contiguous sequence of context/deletion hashes. Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+
+Success output is a compact post-edit hash-only receipt, not the whole patched file:
+
+```text
+@@ result
+ HHHH
++HHHH
+ HHHH
+```
+
+Receipt rows include only surviving/current context hashes (` HHHH`) and newly inserted hashes (`+HHHH`). Deleted hashes and file content are omitted from visible output. If receipt is empty or too large, the patch still succeeds after a valid apply and returns a short status telling you to use `hashline_read`.
 
 ## Validate
 

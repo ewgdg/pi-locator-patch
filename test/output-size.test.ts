@@ -16,6 +16,13 @@ const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(c
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;
 const oversizedContent = () => "x".repeat(LLM_VISIBLE_OUTPUT_MAX_BYTES + 1);
 const oneOverLineCap = () => Array.from({ length: LLM_VISIBLE_OUTPUT_MAX_LINES + 1 }, (_, index) => `line-${index}`);
+const resultText = (result: Awaited<ReturnType<typeof hashlinePatchTool.execute>>) => {
+  const content = result.content[0];
+  if (content.type !== "text") {
+    throw new Error("Expected text content");
+  }
+  return content.text;
+};
 
 describe("tool output size guards", () => {
   it("rejects hashline_read output for one overlarge line with pagination guidance", async () => {
@@ -37,29 +44,42 @@ describe("tool output size guards", () => {
     );
   });
 
-  it("rejects oversized hashline_patch success output before writing", async () => {
+  it("writes huge hashline_patch result and returns compact receipt instead of full content", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
     const hugeReplacement = oversizedContent();
     const diff = ["@@ @@", row("-", "old"), row("+", hugeReplacement)].join("\n");
 
-    await expect(
-      hashlinePatchTool.execute("tool-call", { path: "file.txt", patch: diff }, undefined, undefined, { cwd: dir } as never)
-    ).rejects.toThrow(/\[E_OUTPUT_TOO_LARGE\].*No file was written/);
-    await expect(readFile(file, "utf8")).resolves.toBe("old");
+    const result = await hashlinePatchTool.execute(
+      "tool-call",
+      { path: "file.txt", patch: diff },
+      undefined,
+      undefined,
+      { cwd: dir } as never
+    );
+
+    expect(resultText(result)).toBe(["@@ result", `+${hashLine(hugeReplacement)}`].join("\n"));
+    expect(resultText(result)).not.toContain(hugeReplacement);
+    await expect(readFile(file, "utf8")).resolves.toBe(hugeReplacement);
   });
 
-  it("rejects hashline_patch output over the line cap before writing", async () => {
+  it("writes hashline_patch result when receipt exceeds the line cap and returns omitted status", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
     const insertedRows = oneOverLineCap();
     const diff = ["@@ @@", row("-", "old"), ...insertedRows.map((content) => row("+", content))].join("\n");
 
-    await expect(
-      hashlinePatchTool.execute("tool-call", { path: "file.txt", patch: diff }, undefined, undefined, { cwd: dir } as never)
-    ).rejects.toThrow(/\[E_OUTPUT_TOO_LARGE\].*lines.*No file was written/);
-    await expect(readFile(file, "utf8")).resolves.toBe("old");
+    const result = await hashlinePatchTool.execute(
+      "tool-call",
+      { path: "file.txt", patch: diff },
+      undefined,
+      undefined,
+      { cwd: dir } as never
+    );
+
+    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*lines.*Use hashline_read/);
+    await expect(readFile(file, "utf8")).resolves.toBe(insertedRows.join("\n"));
   });
 });

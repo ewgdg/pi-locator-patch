@@ -11,33 +11,51 @@ export const LLM_VISIBLE_OUTPUT_MAX_LINES =
 
 type HashlineToolName = "hashline_read" | "hashline_patch";
 
+export interface VisibleOutputOverflow {
+  kind: "lines" | "bytes";
+  actual: string;
+  max: string;
+}
+
 export function assertHashlineOutputFits(
   toolName: HashlineToolName,
   renderedOutput: string,
   renderedLineCount = countRenderedLines(renderedOutput)
 ): void {
+  const overflow = getVisibleOutputOverflow(renderedOutput, renderedLineCount);
+  if (overflow) {
+    throw outputTooLargeError(toolName, overflow);
+  }
+}
+
+export function getVisibleOutputOverflow(
+  renderedOutput: string,
+  renderedLineCount = countRenderedLines(renderedOutput)
+): VisibleOutputOverflow | undefined {
   if (renderedLineCount > LLM_VISIBLE_OUTPUT_MAX_LINES) {
-    throw outputTooLargeError(toolName, `${renderedLineCount} lines`, `${LLM_VISIBLE_OUTPUT_MAX_LINES} lines`);
+    return { kind: "lines", actual: `${renderedLineCount} lines`, max: `${LLM_VISIBLE_OUTPUT_MAX_LINES} lines` };
   }
 
   const byteLength = Buffer.byteLength(renderedOutput, "utf8");
   if (byteLength > LLM_VISIBLE_OUTPUT_MAX_BYTES) {
-    throw outputTooLargeError(toolName, `${byteLength} bytes`, `${LLM_VISIBLE_OUTPUT_MAX_BYTES} bytes`);
+    return { kind: "bytes", actual: `${byteLength} bytes`, max: `${LLM_VISIBLE_OUTPUT_MAX_BYTES} bytes` };
   }
+
+  return undefined;
 }
 
-function countRenderedLines(renderedOutput: string): number {
+export function countRenderedLines(renderedOutput: string): number {
   return renderedOutput === "" ? 0 : renderedOutput.split("\n").length;
 }
 
-function outputTooLargeError(toolName: HashlineToolName, actual: string, max: string): OutputTooLargeError {
+function outputTooLargeError(toolName: HashlineToolName, overflow: VisibleOutputOverflow): OutputTooLargeError {
   if (toolName === "hashline_read") {
     return new OutputTooLargeError(
-      `hashline_read output is ${actual}, exceeding ${max}. Use a lower limit and/or different offset to paginate; no file was written.`
+      `hashline_read output is ${overflow.actual}, exceeding ${overflow.max}. Use a lower limit and/or different offset to paginate; no file was written.`
     );
   }
 
   return new OutputTooLargeError(
-    `hashline_patch success output is ${actual}, exceeding ${max}. No file was written; reduce resulting file size before retrying.`
+    `hashline_patch visible receipt is ${overflow.actual}, exceeding ${overflow.max}. Patch was not written by this guard; use hashline_read to inspect current file hashes.`
   );
 }

@@ -36,6 +36,24 @@ Rules:
 - Zero matches = stale hunk. More than one match = ambiguous hunk.
 - Pure insertion has empty match sequence and is supported only when target file has zero logical lines.
 
+## Success receipt
+
+`hashline_patch` success output is not a full `HASH│content` rendering of the patched file. Visible output is a compact post-edit hash-only receipt per hunk:
+
+```text
+@@ result
+ HHHH
++HHHH
+ HHHH
+```
+
+Receipt lines include only:
+
+- ` HHHH` for context lines that survived in the current file.
+- `+HHHH` for newly inserted lines.
+
+Deleted hashes are omitted from visible output. For example, a context/delete/insert/context hunk returns context, insert, context hashes only. A delete-only hunk returns surviving context hashes only. If a receipt has no surviving context or inserted hashes, or if the receipt exceeds visible output caps, the patch still writes after a valid apply and returns a compact status telling the caller to use `hashline_read`.
+
 ## Collision risk
 
-4-character hashes expose 24 bits. Collisions are accepted v1 behavior. Apply uses hashes only; it does not compare target content to patch content after locating a hunk. Context lines in output preserve actual target content.
+4-character hashes expose 24 bits. Collisions are accepted v1 behavior. Apply uses hashes only; it does not compare target content to patch content after locating a hunk. Context lines in the receipt preserve actual target hashes after apply.

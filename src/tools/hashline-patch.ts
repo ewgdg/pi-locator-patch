@@ -1,8 +1,16 @@
 import { defineTool, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { readExistingTextFile, resolveExistingRealPath, writeTextFileAtomically } from "../fs-text.js";
-import { applyPatchToText } from "../apply.js";
-import { assertHashlineOutputFits } from "../output-size.js";
+import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
+import { countRenderedLines, getVisibleOutputOverflow, type VisibleOutputOverflow } from "../output-size.js";
+
+interface PatchReceiptDecision {
+  text: string;
+  omitted: boolean;
+  omitReason?: "empty" | "too_large";
+  overflow?: VisibleOutputOverflow;
+  visibleLineCount: number;
+}
 
 export const hashlinePatchTool = defineTool({
   name: "hashline_patch",
@@ -12,7 +20,8 @@ export const hashlinePatchTool = defineTool({
   promptGuidelines: [
     "hashline_patch hunks must use header '@@ @@' and operation lines like ' HHHH│context', '-HHHH│old', '+HHHH│new'.",
     "hashline_patch matches only context/deletion hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
-    "For hashline_patch, each hunk's context/deletion hash sequence must match exactly one span in the current file."
+    "For hashline_patch, each hunk's context/deletion hash sequence must match exactly one span in the current file.",
+    "On hashline_patch success, visible output is a compact hash-only receipt: '@@ result' plus surviving context hashes prefixed with space and inserted hashes prefixed with '+'. Deleted hashes are omitted; use hashline_read when the receipt is omitted or more context is needed."
   ],
   parameters: Type.Object(
     {
@@ -31,20 +40,61 @@ export const hashlinePatchTool = defineTool({
     return withFileMutationQueue(realTargetPath, async () => {
       const { text } = await readExistingTextFile(realTargetPath, { writable: true });
       const result = applyPatchToText(text, params.patch);
-      assertHashlineOutputFits("hashline_patch", result.renderedHashLines, result.entries.length);
       const dryRun = params.dry_run ?? false;
+      const receipt = buildPatchReceiptDecision(result, dryRun);
       if (!dryRun) {
         await writeTextFileAtomically(realTargetPath, result.text);
       }
 
       return {
-        content: [{ type: "text", text: result.renderedHashLines }],
+        content: [{ type: "text", text: receipt.text }],
         details: {
           path: realTargetPath,
           dryRun,
-          lineCount: result.entries.length
+          lineCount: result.entries.length,
+          receipt: {
+            omitted: receipt.omitted,
+            omitReason: receipt.omitReason,
+            overflow: receipt.overflow,
+            visibleLineCount: receipt.visibleLineCount,
+            hashLineCount: result.receiptHashLineCount,
+            hunkReceipts: result.hunkReceipts
+          },
+          audit: {
+            hunkAudits: result.hunkAudits
+          }
         }
       };
     });
   }
 });
+
+function buildPatchReceiptDecision(result: ApplyPatchResult, dryRun: boolean): PatchReceiptDecision {
+  const action = dryRun ? "Patch dry-run succeeded" : "Patch applied";
+  if (result.receiptHashLineCount === 0) {
+    return {
+      text: `${action}. Receipt omitted: no surviving context or inserted hashes. Use hashline_read to inspect current file hashes.`,
+      omitted: true,
+      omitReason: "empty",
+      visibleLineCount: 1
+    };
+  }
+
+  const visibleLineCount = countRenderedLines(result.renderedReceipt);
+  const overflow = getVisibleOutputOverflow(result.renderedReceipt, visibleLineCount);
+  if (overflow) {
+    return {
+      text: `${action}. Receipt omitted: ${overflow.actual} exceeds visible cap ${overflow.max}. Use hashline_read to inspect current file hashes.`,
+      omitted: true,
+      omitReason: "too_large",
+      overflow,
+      visibleLineCount
+    };
+  }
+
+  return {
+    text: result.renderedReceipt,
+    omitted: false,
+    visibleLineCount
+  };
+}

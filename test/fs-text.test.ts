@@ -41,7 +41,7 @@ describe("text file IO", () => {
 });
 
 describe("hashline_patch tool", () => {
-  it("dry_run validates and returns new hashlines without writing", async () => {
+  it("dry_run validates and returns receipt without writing", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
@@ -54,7 +54,7 @@ describe("hashline_patch tool", () => {
     if (content.type !== "text") {
       throw new Error("Expected text content");
     }
-    expect(content.text).toBe(`${hashLine("new")}│new`);
+    expect(content.text).toBe(["@@ result", `+${hashLine("new")}`].join("\n"));
     await expect(readFile(file, "utf8")).resolves.toBe("old");
   });
 

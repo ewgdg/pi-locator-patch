@@ -18,11 +18,17 @@ describe("applyPatchToText", () => {
     );
     expect(result.text).toBe("a\nnew\nz\n");
     expect(result.renderedHashLines).toContain(`${hashLine("new")}│new`);
+    expect(result.renderedReceipt).toBe(
+      ["@@ result", ` ${hashLine("a")}`, `+${hashLine("new")}`, ` ${hashLine("z")}`].join("\n")
+    );
+    expect(result.renderedReceipt).not.toContain(hashLine("old"));
   });
 
   it("deletes and inserts using exact unique hash sequence", () => {
     const deleteResult = applyPatchToText("start\nremove\nend", patch(row(" ", "start"), row("-", "remove"), row(" ", "end")));
     expect(deleteResult.text).toBe("start\nend");
+    expect(deleteResult.renderedReceipt).toBe(["@@ result", ` ${hashLine("start")}`, ` ${hashLine("end")}`].join("\n"));
+    expect(deleteResult.hunkAudits[0].deletedHashes).toEqual([hashLine("remove")]);
 
     const insertResult = applyPatchToText("start\nend", patch(row(" ", "start"), row("+", "middle"), row(" ", "end")));
     expect(insertResult.text).toBe("start\nmiddle\nend");
@@ -55,7 +61,10 @@ describe("applyPatchToText", () => {
   });
 
   it("deletes entire and single-line files", () => {
-    expect(applyPatchToText("only", patch(row("-", "only"))).text).toBe("");
+    const deleteOnly = applyPatchToText("only", patch(row("-", "only")));
+    expect(deleteOnly.text).toBe("");
+    expect(deleteOnly.receiptHashLineCount).toBe(0);
+    expect(deleteOnly.renderedReceipt).toBe("@@ result");
     expect(applyPatchToText("a\nb", patch(row("-", "a"), row("-", "b"))).text).toBe("");
   });
 
