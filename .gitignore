@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+.DS_Store
+
+# Agent orchestration artifacts
+context/
+plan/
+review/
+worker/
+progress.md
