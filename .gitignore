@@ -6,7 +6,6 @@ coverage/
 
 # Agent orchestration artifacts
 context/
-plan/
 review/
 worker/
 progress.md
