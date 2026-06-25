@@ -12,16 +12,16 @@ interface PatchReceiptDecision {
   visibleLineCount: number;
 }
 
-export const hashlinePatchTool = defineTool({
-  name: "hashline_patch",
+export const patchTool = defineTool({
+  name: "patch",
   label: "Hashline Patch",
   description: "Apply a single-file hash-only unified patch to an existing UTF-8 text file.",
-  promptSnippet: "hashline_patch applies @@ @@ hunks using exact HASH│content anchors from hashline_read.",
+  promptSnippet: "patch applies @@ @@ hunks using exact HASH│content anchors from read.",
   promptGuidelines: [
-    "hashline_patch hunks must use header '@@ @@' and operation lines like ' HHHH│context', '-HHHH│old', '+HHHH│new'.",
-    "hashline_patch matches only context/deletion hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
-    "For hashline_patch, each hunk's context/deletion hash sequence must match exactly one span in the current file.",
-    "On hashline_patch success, visible output is a compact hash-only receipt: '@@ result' plus surviving context hashes prefixed with space and inserted hashes prefixed with '+'. Deleted hashes are omitted; use hashline_read when the receipt is omitted or more context is needed."
+    "patch hunks must use header '@@ @@' and operation lines like ' HHHH│context', '-HHHH│old', '+HHHH│new'.",
+    "patch matches only context/deletion hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
+    "For patch, each hunk's context/deletion hash sequence must match exactly one span in the current file.",
+    "On patch success, visible output is a compact hash-only receipt: '@@ result' plus surviving context hashes prefixed with space and inserted hashes prefixed with '+'. Deleted hashes are omitted; use read when the receipt is omitted or more context is needed."
   ],
   parameters: Type.Object(
     {
@@ -73,7 +73,7 @@ function buildPatchReceiptDecision(result: ApplyPatchResult, dryRun: boolean): P
   const action = dryRun ? "Patch dry-run succeeded" : "Patch applied";
   if (result.receiptHashLineCount === 0) {
     return {
-      text: `${action}. Receipt omitted: no surviving context or inserted hashes. Use hashline_read to inspect current file hashes.`,
+      text: `${action}. Receipt omitted: no surviving context or inserted hashes. Use read to inspect current file hashes.`,
       omitted: true,
       omitReason: "empty",
       visibleLineCount: 1
@@ -84,7 +84,7 @@ function buildPatchReceiptDecision(result: ApplyPatchResult, dryRun: boolean): P
   const overflow = getVisibleOutputOverflow(result.renderedReceipt, visibleLineCount);
   if (overflow) {
     return {
-      text: `${action}. Receipt omitted: ${overflow.actual} exceeds visible cap ${overflow.max}. Use hashline_read to inspect current file hashes.`,
+      text: `${action}. Receipt omitted: ${overflow.actual} exceeds visible cap ${overflow.max}. Use read to inspect current file hashes.`,
       omitted: true,
       omitReason: "too_large",
       overflow,

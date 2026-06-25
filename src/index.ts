@@ -1,15 +1,18 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { hashlinePatchTool } from "./tools/hashline-patch.js";
-import { hashlineReadTool } from "./tools/hashline-read.js";
+import { patchTool } from "./tools/hashline-patch.js";
+import { readTool } from "./tools/hashline-read.js";
 
 export default function piHashlinePatch(pi: ExtensionAPI): void {
-  pi.registerTool(hashlineReadTool);
-  pi.registerTool(hashlinePatchTool);
+  pi.registerTool(readTool);
+  pi.registerTool(patchTool);
 
   pi.on("session_start", () => {
     const activeTools = pi.getActiveTools();
-    const hashlineTools = ["hashline_read", "hashline_patch"];
-    const withoutPlainTextEditTools = activeTools.filter((tool) => tool !== "read" && tool !== "edit");
-    pi.setActiveTools([...new Set([...withoutPlainTextEditTools, ...hashlineTools])]);
+    const requiredHashlineTools = ["read", "patch"];
+    // Keep built-in write active like pi-hashline-edit-pro; only edit conflicts with hash-anchored patching.
+    const withoutConflictingTools = activeTools.filter(
+      (tool) => tool !== "edit" && tool !== "hashline_read" && tool !== "hashline_patch"
+    );
+    pi.setActiveTools([...new Set([...withoutConflictingTools, ...requiredHashlineTools])]);
   });
 }

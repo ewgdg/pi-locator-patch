@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileTextError, hashLine, readExistingTextFile, writeTextFileAtomically } from "../src/api.js";
-import { hashlinePatchTool } from "../src/tools/hashline-patch.js";
+import { patchTool } from "../src/tools/hashline-patch.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
 const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
@@ -40,14 +40,14 @@ describe("text file IO", () => {
   });
 });
 
-describe("hashline_patch tool", () => {
+describe("patch tool", () => {
   it("dry_run validates and returns receipt without writing", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
     const diff = ["@@ @@", row("-", "old"), row("+", "new")].join("\n");
 
-    const result = await hashlinePatchTool.execute("tool-call", { path: "file.txt", patch: diff, dry_run: true }, undefined, undefined, { cwd: dir } as never);
+    const result = await patchTool.execute("tool-call", { path: "file.txt", patch: diff, dry_run: true }, undefined, undefined, { cwd: dir } as never);
 
     const content = result.content[0];
     expect(content.type).toBe("text");
@@ -65,7 +65,7 @@ describe("hashline_patch tool", () => {
     const diff = ["@@ @@", row("-", "old"), row("+", "new")].join("\n");
 
     await expect(
-      hashlinePatchTool.execute("tool-call", { path: "file.txt", patch: diff }, undefined, undefined, { cwd: dir } as never)
+      patchTool.execute("tool-call", { path: "file.txt", patch: diff }, undefined, undefined, { cwd: dir } as never)
     ).rejects.toThrow("[E_STALE_HUNK]");
     await expect(readFile(file, "utf8")).resolves.toBe("actual");
   });

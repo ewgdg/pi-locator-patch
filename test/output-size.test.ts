@@ -8,15 +8,15 @@ import {
   LLM_VISIBLE_OUTPUT_MAX_BYTES,
   LLM_VISIBLE_OUTPUT_MAX_LINES
 } from "../src/output-size.js";
-import { hashlinePatchTool } from "../src/tools/hashline-patch.js";
-import { hashlineReadTool } from "../src/tools/hashline-read.js";
+import { patchTool } from "../src/tools/hashline-patch.js";
+import { readTool } from "../src/tools/hashline-read.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
 const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;
 const oversizedContent = () => "x".repeat(LLM_VISIBLE_OUTPUT_MAX_BYTES + 1);
 const oneOverLineCap = () => Array.from({ length: LLM_VISIBLE_OUTPUT_MAX_LINES + 1 }, (_, index) => `line-${index}`);
-const resultText = (result: Awaited<ReturnType<typeof hashlinePatchTool.execute>>) => {
+const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
   if (content.type !== "text") {
     throw new Error("Expected text content");
@@ -25,33 +25,33 @@ const resultText = (result: Awaited<ReturnType<typeof hashlinePatchTool.execute>
 };
 
 describe("tool output size guards", () => {
-  it("rejects hashline_read output for one overlarge line with pagination guidance", async () => {
+  it("rejects read output for one overlarge line with pagination guidance", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "large.txt");
     await writeFile(file, oversizedContent());
 
     await expect(
-      hashlineReadTool.execute("tool-call", { path: "large.txt", limit: 1 }, undefined, undefined, { cwd: dir } as never)
+      readTool.execute("tool-call", { path: "large.txt", limit: 1 }, undefined, undefined, { cwd: dir } as never)
     ).rejects.toThrow(/\[E_OUTPUT_TOO_LARGE\].*lower limit.*offset/);
   });
 
-  it("rejects hashline_read output when rendered rows exceed the visible line cap", () => {
+  it("rejects read output when rendered rows exceed the visible line cap", () => {
     const rows = oneOverLineCap();
     const rendered = rows.map(renderedRow).join("\n");
 
-    expect(() => assertHashlineOutputFits("hashline_read", rendered, rows.length)).toThrow(
+    expect(() => assertHashlineOutputFits("read", rendered, rows.length)).toThrow(
       /\[E_OUTPUT_TOO_LARGE\].*lines.*lower limit.*offset/
     );
   });
 
-  it("writes huge hashline_patch result and returns compact receipt instead of full content", async () => {
+  it("writes huge patch result and returns compact receipt instead of full content", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
     const hugeReplacement = oversizedContent();
     const diff = ["@@ @@", row("-", "old"), row("+", hugeReplacement)].join("\n");
 
-    const result = await hashlinePatchTool.execute(
+    const result = await patchTool.execute(
       "tool-call",
       { path: "file.txt", patch: diff },
       undefined,
@@ -64,14 +64,14 @@ describe("tool output size guards", () => {
     await expect(readFile(file, "utf8")).resolves.toBe(hugeReplacement);
   });
 
-  it("writes hashline_patch result when receipt exceeds the line cap and returns omitted status", async () => {
+  it("writes patch result when receipt exceeds the line cap and returns omitted status", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
     const insertedRows = oneOverLineCap();
     const diff = ["@@ @@", row("-", "old"), ...insertedRows.map((content) => row("+", content))].join("\n");
 
-    const result = await hashlinePatchTool.execute(
+    const result = await patchTool.execute(
       "tool-call",
       { path: "file.txt", patch: diff },
       undefined,
@@ -79,7 +79,7 @@ describe("tool output size guards", () => {
       { cwd: dir } as never
     );
 
-    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*lines.*Use hashline_read/);
+    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*lines.*Use read/);
     await expect(readFile(file, "utf8")).resolves.toBe(insertedRows.join("\n"));
   });
 });

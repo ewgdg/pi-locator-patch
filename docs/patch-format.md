@@ -38,7 +38,7 @@ Rules:
 
 ## Success receipt
 
-`hashline_patch` success output is not a full `HASH│content` rendering of the patched file. Visible output is a compact post-edit hash-only receipt per hunk:
+`patch` success output is not a full `HASH│content` rendering of the patched file. Visible output is a compact post-edit hash-only receipt per hunk:
 
 ```text
 @@ result
@@ -52,7 +52,7 @@ Receipt lines include only:
 - ` HHHH` for context lines that survived in the current file.
 - `+HHHH` for newly inserted lines.
 
-Deleted hashes are omitted from visible output. For example, a context/delete/insert/context hunk returns context, insert, context hashes only. A delete-only hunk returns surviving context hashes only. If a receipt has no surviving context or inserted hashes, or if the receipt exceeds visible output caps, the patch still writes after a valid apply and returns a compact status telling the caller to use `hashline_read`.
+Deleted hashes are omitted from visible output. For example, a context/delete/insert/context hunk returns context, insert, context hashes only. A delete-only hunk returns surviving context hashes only. If a receipt has no surviving context or inserted hashes, or if the receipt exceeds visible output caps, the patch still writes after a valid apply and returns a compact status telling the caller to use `read`.
 
 ## Collision risk
 

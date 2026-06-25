@@ -9,7 +9,7 @@ const piDefaultMaxLines = (PiCodingAgent as { DEFAULT_MAX_LINES?: unknown }).DEF
 export const LLM_VISIBLE_OUTPUT_MAX_LINES =
   typeof piDefaultMaxLines === "number" ? piDefaultMaxLines : LOCAL_DEFAULT_MAX_LINES;
 
-type HashlineToolName = "hashline_read" | "hashline_patch";
+type HashlineToolName = "read" | "patch";
 
 export interface VisibleOutputOverflow {
   kind: "lines" | "bytes";
@@ -49,13 +49,13 @@ export function countRenderedLines(renderedOutput: string): number {
 }
 
 function outputTooLargeError(toolName: HashlineToolName, overflow: VisibleOutputOverflow): OutputTooLargeError {
-  if (toolName === "hashline_read") {
+  if (toolName === "read") {
     return new OutputTooLargeError(
-      `hashline_read output is ${overflow.actual}, exceeding ${overflow.max}. Use a lower limit and/or different offset to paginate; no file was written.`
+      `read output is ${overflow.actual}, exceeding ${overflow.max}. Use a lower limit and/or different offset to paginate; no file was written.`
     );
   }
 
   return new OutputTooLargeError(
-    `hashline_patch visible receipt is ${overflow.actual}, exceeding ${overflow.max}. Patch was not written by this guard; use hashline_read to inspect current file hashes.`
+    `patch visible receipt is ${overflow.actual}, exceeding ${overflow.max}. Patch was not written by this guard; use read to inspect current file hashes.`
   );
 }

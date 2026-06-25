@@ -51,7 +51,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
    - Changes: resolve path relative to `ctx.cwd`, strip leading `@`, require existing regular readable/writable text file, reject null bytes and invalid UTF-8, read via `Buffer` + `TextDecoder({ fatal: true })`; write atomically through temp file in same directory; for existing symlink use `realpath` so target is updated, not symlink replaced.
    - Acceptance: binary/null-byte fixture rejected; symlink fixture updates target content.
 
-10. **Add `hashline_read` Pi tool**
+10. **Add `read` Pi tool**
     - File: `src/tools/hashline-read.ts`
     - Schema:
       ```ts
@@ -61,10 +61,10 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000, description: "Max logical lines to return." }))
       }, { additionalProperties: false })
       ```
-    - Changes: read text file, render selected lines only as `HASH│content`; if omitted, default `offset=1`, `limit=2000`; if file has more lines than returned, include pagination metadata only in `details`, not prepended to text.
-    - Acceptance: tool text content contains only hashline rows; no line numbers/counters.
+    - Changes: for text files, render selected lines only as `HASH│content`; if omitted, default `offset=1`, `limit=2000`; if file has more lines than returned, include pagination metadata only in `details`, not prepended to text. For supported images, delegate to Pi's built-in `read` behavior.
+    - Acceptance: text tool output contains only hashline rows; no line numbers/counters. Image output follows built-in read behavior.
 
-11. **Add `hashline_patch` Pi tool**
+11. **Add `patch` Pi tool**
     - File: `src/tools/hashline-patch.ts`
     - Schema:
       ```ts
@@ -74,12 +74,12 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
         dry_run: Type.Optional(Type.Boolean({ description: "Validate/apply in memory and do not write." }))
       }, { additionalProperties: false })
       ```
-    - Changes: wrap whole read-apply-write window in `withFileMutationQueue(realTargetPath, ...)`; on success write unless `dry_run`; return only resulting full `HASH│content` output as text; put `{ path, dryRun, lineCount }` in details.
+    - Changes: wrap whole read-apply-write window in `withFileMutationQueue(realTargetPath, ...)`; on success write unless `dry_run`; return only compact hash-only receipt text; put `{ path, dryRun, lineCount }` in details.
     - Acceptance: concurrent same-file calls are queued; stale/ambiguous patch leaves file unchanged.
 
 12. **Register extension**
     - File: `src/index.ts`
-    - Changes: default factory imports/registers `hashline_read` and `hashline_patch`; add prompt snippets/guidelines saying patches use hash-only anchors, no line numbers, no duplicate counters, no fuzzy fallback.
+    - Changes: default factory imports/registers `read` and `patch`; add prompt snippets/guidelines saying patches use hash-only anchors, no line numbers, no duplicate counters, no fuzzy fallback. Session start hides built-in `edit`, keeps built-in `write`, removes stale old tool names if present, and ensures `read`/`patch` are active.
     - Acceptance: `pi -e ./src/index.ts` loads and lists both tools.
 
 13. **Export core API for tests/users**
@@ -100,16 +100,17 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
     - Acceptance: docs contain no machine-specific paths.
 
 ## Tool Schemas
-- `hashline_read`
+- `read`
   - `path: string` required.
   - `offset?: integer >= 1`, default `1`.
   - `limit?: integer 1..2000`, default `2000`.
-  - Output text: only `HASH│content` rows.
-- `hashline_patch`
+  - Text output: only `HASH│content` rows.
+  - Supported images delegate to built-in `read` behavior.
+- `patch`
   - `path: string` required; must already exist and be writable text file.
   - `patch: string` required; single-file hash-only unified patch.
   - `dry_run?: boolean`, default `false`.
-  - Output text: resulting whole file as `HASH│content` rows.
+  - Output text: compact hash-only receipt.
 
 ## Patch Syntax
 ```diff
@@ -131,7 +132,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
 - Apply stale: absent sequence; changed context hash; changed deletion hash; multi-hunk failure leaves original file unchanged.
 - Apply ambiguous: same match sequence twice; single duplicate deletion with no unique context; pure insertion into non-empty file rejected; mocked hash collision via injectable hash function.
 - Empty/small: pure insertion into empty existing file; delete entire file; single-line replace/delete.
-- Tool/fs: invalid UTF-8 rejected; null byte rejected; symlink target updated; `dry_run` does not write; `hashline_patch` queues mutation.
+- Tool/fs: invalid UTF-8 rejected; null byte rejected; symlink target updated; `dry_run` does not write; `patch` queues mutation.
 
 ## Validation Commands
 ```sh
@@ -143,10 +144,10 @@ pi -e ./src/index.ts
 ```
 Manual smoke after `pi -e`:
 1. Create temp existing text file.
-2. Invoke `hashline_read`.
+2. Invoke `read`.
 3. Build patch with `@@ @@` and ` HASH│...` / `-HASH│...` / `+HASH│...`.
-4. Invoke `hashline_patch`.
-5. Confirm stdout is new full hashline output and file content changed.
+4. Invoke `patch`.
+5. Confirm stdout is compact hash-only receipt and file content changed.
 6. Try stale and ambiguous fixtures; confirm file unchanged.
 
 ## Files to Modify
@@ -196,8 +197,8 @@ Manual smoke after `pi -e`:
 - No diff generator.
 - No multi-file patch apply in v1.
 - No new-file creation; target file must already exist. Pure insertion into an existing empty file is supported.
-- No binary/image read delegation.
-- No override/removal of built-in Pi `read`, `edit`, or `write` tools.
+- No binary fallback beyond supported built-in image reads.
+- No disabling built-in Pi `write`; built-in `edit` is hidden because it conflicts with hash-anchored patching.
 - No snapshot IDs, duplicate counters, perfect hashes, fuzzy matching, or source line-number matching.
 - No legacy `pi-hashline-edit-pro` compatibility fields or migration logic.
 
