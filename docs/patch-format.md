@@ -14,7 +14,7 @@ Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline
 
 ## Universal patch
 
-Preferred `patch` input is Codex-like and carries file paths:
+Preferred `patch` input is Codex-like and carries file paths. The tool accepts either inline `patch` text or `patch_file`; provide exactly one. `patch_file` paths resolve against the tool cwd; file paths inside the patch also resolve against cwd, not the patch file directory.
 
 ```diff
 *** Begin Patch
@@ -26,8 +26,6 @@ Preferred `patch` input is Codex-like and carries file paths:
 -HHHH
 +literal inserted content
 *** Delete File: old.txt
-@@
--HHHH
 *** End Patch
 ```
 
@@ -37,7 +35,7 @@ Supported section headers:
 - `*** Update File: path`
 - `*** Delete File: path`
 
-Patch must start with `*** Begin Patch` and end with `*** End Patch`. One operation per path is supported.
+Patch must start with `*** Begin Patch` and end with `*** End Patch`. One operation per path is supported. File operations apply sequentially: earlier successful operations stay applied if a later non-dry operation fails, and later operations are skipped. During non-dry apply failures, the tool writes a retry patch containing the failed operation plus skipped later operations and includes its path in the error message. `dry_run: true` validates the full patch without writing.
 
 ## Add File
 

@@ -32,9 +32,12 @@ Input:
 
 ```ts
 {
-  patch: string;
+  patch?: string;
+  patch_file?: string;
   dry_run?: boolean;
 }
+
+// Provide exactly one of patch or patch_file. patch_file resolves against cwd.
 ```
 
 Preferred syntax is Codex-like universal patch text:
@@ -55,6 +58,8 @@ Preferred syntax is Codex-like universal patch text:
 Update hunks are located by exact contiguous sequence of context/delete hashes. Context/delete operations contain only the 4-character hash (` HHHH`, `-HHHH`); insert operations contain literal new content (`+new text`). Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
 Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Full content diff is not shown in model-visible output; it stays in `details.diff`. In Pi TUI, the `patch` result renderer uses `details.diff` for the human view: collapsed output shows a compact colorized diff preview, and expanded output shows a much larger diff window.
+
+File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a retry patch file path containing the failed operation plus skipped later operations. `dry_run: true` validates the full patch without writing.
 
 ```text
 *** Add File: new.txt

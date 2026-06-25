@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, chmod, lstat, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { access, chmod, link, lstat, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { FileTextError } from "./errors.js";
@@ -73,7 +73,7 @@ export async function writeTextFileAtomically(path: string, text: string): Promi
 
 export async function writeNewTextFileAtomically(path: string, text: string): Promise<void> {
   await assertNewTextFileTarget(path);
-  await writeFile(path, text, { encoding: "utf8", flag: "wx", mode: 0o666 });
+  await writeNewTextFileViaTemp(path, text);
 }
 
 export async function assertNewTextFileTarget(path: string): Promise<void> {
@@ -127,6 +127,21 @@ async function assertWritableDirectory(path: string): Promise<void> {
     throw new FileTextError(`Directory is not readable and writable: ${path}`);
   });
 }
+async function writeNewTextFileViaTemp(path: string, text: string): Promise<void> {
+  const targetDirectory = dirname(path);
+  const tempPath = resolve(targetDirectory, `.hashline-patch-${process.pid}-${randomUUID()}.tmp`);
+
+  try {
+    await writeFile(tempPath, text, { encoding: "utf8", flag: "wx", mode: 0o666 });
+    // Hard-link publish gives no-overwrite atomic creation; final path is never a half-written file.
+    await link(tempPath, path);
+  } catch (error) {
+    throw error;
+  } finally {
+    await unlink(tempPath).catch(() => undefined);
+  }
+}
+
 
 async function writeTextFileViaTemp(path: string, text: string, mode: number): Promise<void> {
   const targetDirectory = dirname(path);

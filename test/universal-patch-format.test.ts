@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashLine, parsePatchInput, parseUniversalPatch } from "../src/api.js";
+import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch } from "../src/api.js";
 
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 
@@ -36,5 +36,25 @@ describe("universal patch parser", () => {
   it("rejects delete sections with body lines", () => {
     const withBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "@@", row(" ", "ctx"), "*** End Patch"].join("\n");
     expect(() => parseUniversalPatch(withBody)).toThrow("[E_INVALID_PATCH]");
+  });
+
+  it("serializes parsed operations as reusable universal patch text", () => {
+    const source = [
+      "*** Begin Patch",
+      "*** Add File: added.txt",
+      "+hello",
+      "*** Update File: existing.txt",
+      "@@",
+      row(" ", "ctx"),
+      row("-", "old"),
+      row("+", "new"),
+      "*** Delete File: doomed.txt",
+      "*** End Patch"
+    ].join("\n");
+
+    const serialized = serializeUniversalPatch(parseUniversalPatch(source).operations);
+
+    expect(serialized).toBe(source);
+    expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update", "delete"]);
   });
 });

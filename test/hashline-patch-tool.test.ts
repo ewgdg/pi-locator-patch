@@ -15,6 +15,22 @@ const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   return content.text;
 };
 const detailsDiff = (result: Awaited<ReturnType<typeof patchTool.execute>>) => (result.details as { diff: string }).diff;
+const retryPatchPathFrom = (message: string) => {
+  const match = /^Retry patch: (.+)$/m.exec(message);
+  if (!match) {
+    throw new Error(`Missing retry patch path in: ${message}`);
+  }
+  return match[1];
+};
+
+async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("Expected rejection");
+}
 
 async function patchFile(initialText: string, diff: string, path = "file.txt") {
   const dir = await makeTempDir();
@@ -116,7 +132,7 @@ describe("patch visible receipt", () => {
     expect(detailsDiff(result).split("\n").slice(-2)).toEqual(["+hello", "+"]);
   });
 
-  it("rejects duplicate resolved Add File targets before creating an aliased file", async () => {
+  it("keeps earlier aliased Add File success and writes failed-tail retry patch", async () => {
     const dir = await makeTempDir();
     const patch = [
       "*** Begin Patch",
@@ -127,11 +143,20 @@ describe("patch visible receipt", () => {
       "*** End Patch"
     ].join("\n");
 
-    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
-    await expect(stat(join(dir, "a.txt"))).rejects.toThrow();
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_PARTIAL_PATCH]");
+    expect(message).toContain("Applied:\n*** Add File: a.txt");
+    expect(message).toContain("Failed:\n*** Add File: ./a.txt");
+    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("first");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe([
+      "*** Begin Patch",
+      "*** Add File: ./a.txt",
+      "+second",
+      "*** End Patch"
+    ].join("\n"));
   });
 
-  it("rejects duplicate resolved Update File targets before modifying an aliased file", async () => {
+  it("keeps earlier aliased Update File success and writes failed-tail retry patch", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "a.txt"), "old");
     const patch = [
@@ -147,11 +172,14 @@ describe("patch visible receipt", () => {
       "*** End Patch"
     ].join("\n");
 
-    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
-    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("old");
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_PARTIAL_PATCH]");
+    expect(message).toContain("Failed:\n*** Update File: ./a.txt");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toContain("*** Update File: ./a.txt");
+    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("first");
   });
 
-  it("rejects duplicate resolved Delete File targets before deleting an aliased file", async () => {
+  it("keeps earlier aliased Delete File success and writes failed-tail retry patch", async () => {
     const dir = await makeTempDir();
     const target = join(dir, "doomed.txt");
     await writeFile(target, "bye");
@@ -162,11 +190,14 @@ describe("patch visible receipt", () => {
       "*** End Patch"
     ].join("\n");
 
-    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
-    await expect(readFile(target, "utf8")).resolves.toBe("bye");
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_PARTIAL_PATCH]");
+    expect(message).toContain("Failed:\n*** Delete File: ./doomed.txt");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toContain("*** Delete File: ./doomed.txt");
+    await expect(readFile(target, "utf8")).rejects.toThrow();
   });
 
-  it("validates all files before writing multi-file patches", async () => {
+  it("keeps earlier edits when a later file operation fails", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "one.txt"), "old");
     const patch = [
@@ -180,11 +211,20 @@ describe("patch visible receipt", () => {
       "*** End Patch"
     ].join("\n");
 
-    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
-    await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("old");
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_PARTIAL_PATCH]");
+    expect(message).toContain("Applied:\n*** Update File: one.txt");
+    expect(message).toContain("Failed:\n*** Add File: missing-parent/two.txt");
+    await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("new");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe([
+      "*** Begin Patch",
+      "*** Add File: missing-parent/two.txt",
+      "+second",
+      "*** End Patch"
+    ].join("\n"));
   });
 
-  it("validates later delete targets before writing earlier additions", async () => {
+  it("keeps earlier additions when a later delete target fails", async () => {
     const dir = await makeTempDir();
     const patch = [
       "*** Begin Patch",
@@ -194,11 +234,52 @@ describe("patch visible receipt", () => {
       "*** End Patch"
     ].join("\n");
 
-    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
-    await expect(stat(join(dir, "created.txt"))).rejects.toThrow();
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_PARTIAL_PATCH]");
+    expect(message).toContain("Applied:\n*** Add File: created.txt");
+    expect(message).toContain("Failed:\n*** Delete File: missing.txt");
+    await expect(stat(join(dir, "created.txt"))).resolves.toBeTruthy();
   });
 
-  it("applies a multi-file patch transaction", async () => {
+  it("dry_run validates the whole patch without writing earlier valid operations", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "one.txt"), "old");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: one.txt",
+      "@@",
+      row("-", "old"),
+      row("+", "new"),
+      "*** Add File: missing-parent/two.txt",
+      "+second",
+      "*** End Patch"
+    ].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch, dry_run: true }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
+    await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("old");
+  });
+
+  it("dry_run simulates sequential aliases without writing", async () => {
+    const dir = await makeTempDir();
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: a.txt",
+      "+first",
+      "*** Update File: ./a.txt",
+      "@@",
+      row("-", "first"),
+      row("+", "second"),
+      "*** End Patch"
+    ].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch, dry_run: true }, undefined, undefined, { cwd: dir } as never);
+
+    expect(resultText(result)).toContain("*** Add File: a.txt");
+    expect(resultText(result)).toContain("*** Update File: ./a.txt");
+    await expect(stat(join(dir, "a.txt"))).rejects.toThrow();
+  });
+
+  it("applies a multi-file patch", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "one.txt"), "old");
     const patch = [
@@ -218,6 +299,36 @@ describe("patch visible receipt", () => {
     expect(resultText(result)).toContain("*** Add File: two.txt");
     await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("new");
     await expect(readFile(join(dir, "two.txt"), "utf8")).resolves.toBe("second");
+  });
+
+  it("accepts patch_file instead of inline patch", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "one.txt"), "old");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: one.txt",
+      "@@",
+      row("-", "old"),
+      row("+", "new"),
+      "*** End Patch"
+    ].join("\n");
+    const patchPath = join(dir, "change.patch");
+    await writeFile(patchPath, patch);
+
+    const result = await patchTool.execute("tool-call", { patch_file: "change.patch" }, undefined, undefined, { cwd: dir } as never);
+
+    expect(resultText(result)).toContain("*** Update File: one.txt");
+    await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("new");
+  });
+
+  it("rejects ambiguous patch sources", async () => {
+    const dir = await makeTempDir();
+    const patch = ["*** Begin Patch", "*** Add File: a.txt", "+a", "*** End Patch"].join("\n");
+    await writeFile(join(dir, "change.patch"), patch);
+
+    await expect(patchTool.execute("tool-call", { patch, patch_file: "change.patch" }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
+    await expect(patchTool.execute("tool-call", { patch_file: "missing.patch" }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
+    await expect(patchTool.execute("tool-call", {}, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
   });
 
   it("hard-deletes a file with a Codex Delete File section", async () => {

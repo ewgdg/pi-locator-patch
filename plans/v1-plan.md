@@ -1,7 +1,7 @@
 # Implementation Plan
 
 ## Goal
-Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline read output and transactional hash-only patch apply.
+Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline read output and Codex-style sequential hash-only patch apply.
 
 ## Tasks
 1. **Create package skeleton**
@@ -33,7 +33,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
 
 6. **Implement patch data types and parser**
    - File: `src/patch-format.ts`
-   - Changes: define `Patch`, `Hunk`, `PatchOp`; parse one single-file patch; allow optional `--- ...` and `+++ ...` headers; hunk header must be exactly `@@`; context/delete op lines are hash-only (` HHHH`, `-HHHH`), insert op lines are literal content (`+new content`); reject multiple file sections, line-number hunk headers, bad hashes, malformed lines, and pasted `HASH│content` rows in patch operations.
+   - Changes: define `Patch`, `Hunk`, `PatchOp`; parse Update File hunk bodies; reject `--- ...` / `+++ ...` file headers inside Update File sections; hunk header must be exactly `@@`; context/delete op lines are hash-only (` HHHH`, `-HHHH`), insert op lines are literal content (`+new content`); reject line-number hunk headers, bad hashes, malformed lines, and pasted `HASH│content` rows in patch operations.
    - Acceptance: parser accepts hash-only unified shape and rejects `@@ -1,2 +1,2 @@`.
 
 7. **Implement named errors**
@@ -41,7 +41,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
    - Changes: add `InvalidPatchError`, `StaleHunkError`, `AmbiguousHunkError`, `UnsupportedHunkError`, `FileTextError`; include stable codes like `[E_INVALID_PATCH]`, `[E_STALE_HUNK]`, `[E_AMBIGUOUS_HUNK]`, `[E_UNSUPPORTED_HUNK]` in messages.
    - Acceptance: tests can assert error classes/codes.
 
-8. **Implement transactional apply core**
+8. **Implement per-file in-memory apply core**
    - File: `src/apply.ts`
    - Changes: export `applyPatchToText(text, patchText | Patch, options?)`; parse text to line model; apply hunks sequentially in memory; match sequence = context+deletion hashes only; scan whole current file for exact contiguous hash sequence; `0` = stale, `>1` = ambiguous; insertion ops do not participate in matching; pure insertion supported only when target has zero logical lines; context lines preserve actual target content; deletions remove actual target content; insertions use patch content; return `{ text, entries, renderedHashLines }`.
    - Acceptance: failed hunk throws before caller writes; successful apply returns full new `HASH│content` output.
@@ -69,13 +69,13 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
     - Schema:
       ```ts
       Type.Object({
-        path: Type.String({ description: "Existing target text file to patch." }),
-        patch: Type.String({ description: "Hash-only unified patch using @@ hunks." }),
+        patch: Type.Optional(Type.String({ description: "Codex-like multi-file patch text." })),
+        patch_file: Type.Optional(Type.String({ description: "Path to a UTF-8 patch file." })),
         dry_run: Type.Optional(Type.Boolean({ description: "Validate/apply in memory and do not write." }))
       }, { additionalProperties: false })
       ```
-    - Changes: wrap whole read-apply-write window in `withFileMutationQueue(realTargetPath, ...)`; on success write unless `dry_run`; return only compact hash-only receipt text; put `{ path, dryRun, lineCount }` in details.
-    - Acceptance: concurrent same-file calls are queued; stale/ambiguous patch leaves file unchanged.
+    - Changes: enforce exactly one of `patch`/`patch_file`; wrap each non-dry file operation in `withFileMutationQueue(targetPath, ...)`; apply operations sequentially and stop at first failure; write failed-tail retry patch to a private temp directory; on success return only compact hash-only receipt text; put `{ dryRun, files, receipt }` in details.
+    - Acceptance: concurrent same-file calls are queued; stale/ambiguous patch leaves that file unchanged; earlier successful operations remain applied on later failure; `dry_run` validates whole patch without writing.
 
 12. **Register extension**
     - File: `src/index.ts`
@@ -107,20 +107,21 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
   - Text output: only `HASH│content` rows.
   - Supported images delegate to built-in `read` behavior.
 - `patch`
-  - `path: string` required; must already exist and be writable text file.
-  - `patch: string` required; single-file hash-only unified patch.
+  - `patch?: string`; inline Codex-like universal patch.
+  - `patch_file?: string`; UTF-8 patch file path resolved against cwd.
+  - Exactly one of `patch`/`patch_file` is required.
   - `dry_run?: boolean`, default `false`.
   - Output text: compact hash-only receipt.
 
 ## Patch Syntax
 ```diff
---- a/path optional
-+++ b/path optional
+*** Begin Patch
+*** Update File: path
 @@
  HHHH
 -HHHH
 +inserted content
-```
+*** End Patch
 - Hunk header exactly `@@`; no line numbers, ranges, counters, or hash sequence duplication.
 - Body defines match sequence: all context/deletion hashes in order; insertions excluded.
 - Context/delete rows contain only hashes; insert rows contain literal content. Insert rows that look like pasted `HASH│content` are rejected to avoid stale-anchor mistakes.
@@ -132,7 +133,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
 - Apply stale: absent sequence; changed context hash; changed deletion hash; multi-hunk failure leaves original file unchanged.
 - Apply ambiguous: same match sequence twice; single duplicate deletion with no unique context; pure insertion into non-empty file rejected; mocked hash collision via injectable hash function.
 - Empty/small: pure insertion into empty existing file; delete entire file; single-line replace/delete.
-- Tool/fs: invalid UTF-8 rejected; null byte rejected; symlink target updated; `dry_run` does not write; `patch` queues mutation.
+- Tool/fs: invalid UTF-8 rejected; null byte rejected; symlink target updated; `dry_run` does not write; `patch` queues mutation; non-dry failures keep earlier operations and write retry-tail patch.
 
 ## Validation Commands
 ```sh
@@ -187,18 +188,17 @@ Manual smoke after `pi -e`:
 3. Keep pure core independent from Pi runtime; Pi tools should be thin wrappers.
 4. Do not add line numbers, duplicate counters, perfect hashing, or fuzzy fallback anywhere in patch matching.
 5. Do not compare target content to patch content after hash match; match/apply by hashes only. Preserve actual target context content.
-6. Keep failed patch application transactional: no writes on stale, ambiguous, invalid, or unsupported hunk.
+6. Keep each file operation atomic: failed hunks leave that file unchanged; non-dry multi-file apply may keep earlier successful operations when a later operation fails.
 7. Use `withFileMutationQueue` for every file mutation.
 8. Throw named errors for tool failures; do not return `{ isError: true }` as success.
 9. Keep tool output text pure hashline output on success; put metadata in `details`.
 10. Use temp files under OS temp dir for manual validation, not project scratch files.
 
 ## Non-goals
-- No diff generator.
-- No multi-file patch apply in v1.
-- No new-file creation; target file must already exist. Pure insertion into an existing empty file is supported.
+- No generated diff synthesis.
+- No rollback transaction across files; non-dry patch apply follows Codex-style sequential prefix semantics.
 - No binary fallback beyond supported built-in image reads.
-- No disabling built-in Pi `write`; built-in `edit` is hidden because it conflicts with hash-anchored patching.
+- Built-in `write` and `edit` are hidden because universal `patch` handles add/update/delete with hash anchoring.
 - No snapshot IDs, duplicate counters, perfect hashes, fuzzy matching, or source line-number matching.
 - No legacy `pi-hashline-edit-pro` compatibility fields or migration logic.
 

@@ -72,6 +72,26 @@ export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLi
   return parseUniversalPatch(patchText, hashFn);
 }
 
+export function serializeUniversalPatch(operations: readonly UniversalPatchOperation[]): string {
+  return ["*** Begin Patch", ...operations.flatMap(serializeOperation), "*** End Patch"].join("\n");
+}
+
+function serializeOperation(operation: UniversalPatchOperation): string[] {
+  if (operation.kind === "add") {
+    return [`*** Add File: ${operation.path}`, ...operation.lines.map((line) => `+${line}`)];
+  }
+  if (operation.kind === "delete") {
+    return [`*** Delete File: ${operation.path}`];
+  }
+  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => ["@@", ...hunk.ops.map((op) => `${patchOpPrefix(op.kind)}${op.kind === "insert" ? op.content : op.hash}`)])];
+}
+
+function patchOpPrefix(kind: "context" | "delete" | "insert"): string {
+  if (kind === "context") return " ";
+  if (kind === "delete") return "-";
+  return "+";
+}
+
 function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction): UniversalPatchOperation {
   if (header.kind === "add") {
     const lines = parseAddFileLines(body);

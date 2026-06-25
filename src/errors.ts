@@ -38,6 +38,12 @@ export class FileTextError extends HashlinePatchError {
   }
 }
 
+export class PartialPatchError extends HashlinePatchError {
+  constructor(message: string) {
+    super("[E_PARTIAL_PATCH]", message);
+  }
+}
+
 export class OutputTooLargeError extends HashlinePatchError {
   constructor(message: string) {
     super("[E_OUTPUT_TOO_LARGE]", message);
