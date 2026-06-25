@@ -34,6 +34,35 @@ describe("applyPatchToText", () => {
     expect(insertResult.text).toBe("start\nmiddle\nend");
   });
 
+  it("preserves sparse context ranges with ...", () => {
+    const result = applyPatchToText("start\nkeep one\nkeep two\nend", patch(row(" ", "start"), " ...", row(" ", "end")));
+
+    expect(result.text).toBe("start\nkeep one\nkeep two\nend");
+    expect(result.renderedReceipt).toBe(["@@ result", ` ${hashLine("start")}`, ` ${hashLine("end")}`].join("\n"));
+    expect(result.hunkTranscripts[0].lines).toContainEqual({ kind: "contextRange", content: "... 2 skipped context lines" });
+  });
+
+  it("uses sparse context ranges with insertions", () => {
+    const result = applyPatchToText("start\nkeep\nend", patch(row(" ", "start"), " ...", row("+", "inserted"), row(" ", "end")));
+
+    expect(result.text).toBe("start\nkeep\ninserted\nend");
+  });
+
+  it("deletes sparse ranges between context hashes with -...", () => {
+    const result = applyPatchToText("start\nremove one\nremove two\nend", patch(row(" ", "start"), "-...", row(" ", "end")));
+
+    expect(result.text).toBe("start\nend");
+    expect(result.renderedReceipt).toBe(["@@ result", ` ${hashLine("start")}`, ` ${hashLine("end")}`].join("\n"));
+    expect(result.hunkAudits[0].deletedHashes).toEqual([hashLine("remove one"), hashLine("remove two")]);
+  });
+
+  it("replaces sparse ranges between context hashes with -... and inserts", () => {
+    const result = applyPatchToText("start\nold one\nold two\nend", patch(row(" ", "start"), "-...", row("+", "new"), row(" ", "end")));
+
+    expect(result.text).toBe("start\nnew\nend");
+    expect(result.renderedReceipt).toBe(["@@ result", ` ${hashLine("start")}`, `+${hashLine("new")}`, ` ${hashLine("end")}`].join("\n"));
+  });
+
   it("applies multiple hunks sequentially", () => {
     const text = "a\nb\nc";
     const multi = [
@@ -82,6 +111,12 @@ describe("applyPatchToText", () => {
       row("-", "missing")
     ].join("\n");
     expect(() => applyPatchToText("a\nb", multi)).toThrow(StaleHunkError);
+  });
+
+  it("rejects stale, ambiguous, and unanchored ellipsis ranges", () => {
+    expect(() => applyPatchToText("start\nold", patch(row(" ", "start"), " ...", row(" ", "end")))).toThrow(StaleHunkError);
+    expect(() => applyPatchToText("start\nend\nend", patch(row(" ", "start"), "-...", row(" ", "end")))).toThrow(AmbiguousHunkError);
+    expect(() => applyPatchToText("start\nold", patch(row(" ", "start"), " ..."))).toThrow(UnsupportedHunkError);
   });
 
   it("throws ambiguous when match hash sequence appears twice", () => {

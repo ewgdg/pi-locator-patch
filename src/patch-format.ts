@@ -1,12 +1,29 @@
 import { InvalidPatchError } from "./errors.js";
 import { HASH_SEPARATOR, isHash, type HashFunction, hashLine } from "./hash.js";
 
-export type PatchOpKind = "context" | "delete" | "insert";
+export type HashPatchOpKind = "context" | "delete";
+export type RangePatchOpKind = "context" | "delete";
+export type PatchOpKind = HashPatchOpKind | "insert" | "range";
 
-export interface PatchOp {
-  kind: PatchOpKind;
+export type PatchOp = HashPatchOp | InsertPatchOp | RangePatchOp;
+
+export interface HashPatchOp {
+  kind: HashPatchOpKind;
+  hash: string;
+  content: "";
+}
+
+export interface InsertPatchOp {
+  kind: "insert";
   hash: string;
   content: string;
+}
+
+export interface RangePatchOp {
+  kind: "range";
+  rangeKind: RangePatchOpKind;
+  hash: "";
+  content: "";
 }
 
 export interface Hunk {
@@ -17,7 +34,7 @@ export interface Patch {
   hunks: Hunk[];
 }
 
-const OP_KIND_BY_PREFIX: Record<string, PatchOpKind> = {
+const OP_KIND_BY_PREFIX: Record<string, HashPatchOpKind | "insert"> = {
   " ": "context",
   "-": "delete",
   "+": "insert"
@@ -76,7 +93,15 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
 }
 
 function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
+  if (line === " ...") {
+    return { kind: "range", rangeKind: "context", hash: "", content: "" };
+  }
+  if (line === "-...") {
+    return { kind: "range", rangeKind: "delete", hash: "", content: "" };
+  }
+
   const prefix = line[0];
+
   const kind = OP_KIND_BY_PREFIX[prefix];
   if (!kind) {
     throw new InvalidPatchError(`Malformed patch operation '${line}'.`);

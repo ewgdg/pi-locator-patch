@@ -51,11 +51,21 @@ Preferred syntax is Codex-like universal patch text:
  HHHH
 -HHHH
 +literal inserted line
+@@
+ HHHH
+ ...
++literal insertion after skipped context
+ HHHH
+@@
+ HHHH
+-...
++literal replacement line
+ HHHH
 *** Delete File: old.txt
 *** End Patch
 ```
 
-Update hunks are located by exact contiguous sequence of context/delete hashes. Context/delete operations contain only the 4-character hash (` HHHH`, `-HHHH`); insert operations contain literal new content (`+new text`). Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+Update hunks are located by exact hash anchors. Context/delete operations contain only the 4-character hash (` HHHH`, `-HHHH`); ` ...` preserves a skipped context range between surrounding context hashes; `-...` deletes that range; insert operations contain literal new content (`+new text`). Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
 Success output is compact and model-visible: file operation headers plus hash-only receipt/status. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
 

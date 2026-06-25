@@ -83,7 +83,12 @@ function serializeOperation(operation: UniversalPatchOperation): string[] {
   if (operation.kind === "delete") {
     return [`*** Delete File: ${operation.path}`];
   }
-  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => ["@@", ...hunk.ops.map((op) => `${patchOpPrefix(op.kind)}${op.kind === "insert" ? op.content : op.hash}`)])];
+  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => ["@@", ...hunk.ops.map(serializePatchOp)])];
+}
+
+function serializePatchOp(op: Patch["hunks"][number]["ops"][number]): string {
+  if (op.kind === "range") return `${patchOpPrefix(op.rangeKind)}...`;
+  return `${patchOpPrefix(op.kind)}${op.kind === "insert" ? op.content : op.hash}`;
 }
 
 function patchOpPrefix(kind: "context" | "delete" | "insert"): string {

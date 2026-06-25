@@ -9,6 +9,12 @@ describe("patch parser", () => {
     expect(patch.hunks[0].ops.map((op) => op.kind)).toEqual(["context", "delete", "insert"]);
   });
 
+  it("accepts context and delete ellipsis operations", () => {
+    const patch = parsePatch(["@@", row(" ", "start"), " ...", "-...", row(" ", "end")].join("\n"));
+    expect(patch.hunks[0].ops.map((op) => op.kind)).toEqual(["context", "range", "range", "context"]);
+    expect(patch.hunks[0].ops.filter((op) => op.kind === "range").map((op) => op.rangeKind)).toEqual(["context", "delete"]);
+  });
+
   it("allows separator in operation content", () => {
     const patch = parsePatch(["@@", row("+", "a│b")].join("\n"));
     expect(patch.hunks[0].ops[0].content).toBe("a│b");

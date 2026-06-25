@@ -46,8 +46,10 @@ describe("universal patch parser", () => {
       "*** Update File: existing.txt",
       "@@",
       row(" ", "ctx"),
-      row("-", "old"),
+      " ...",
       row("+", "new"),
+      "-...",
+      row(" ", "after"),
       "*** Delete File: doomed.txt",
       "*** End Patch"
     ].join("\n");

@@ -24,7 +24,17 @@ Preferred `patch` input is Codex-like and carries file paths. The tool accepts e
 @@
  HHHH
 -HHHH
-+literal inserted content
+ HHHH
+@@
+ HHHH
+ ...
++literal insertion after skipped context
+ HHHH
+@@
+ HHHH
+-...
++literal replacement content
+ HHHH
 *** Delete File: old.txt
 *** End Patch
 ```
@@ -53,15 +63,27 @@ Update sections use hashline hunks:
  HHHH
 -HHHH
 +literal inserted content
+@@
+ HHHH
+ ...
++literal insertion after skipped context
+ HHHH
+@@
+ HHHH
+-...
++literal replacement content
+ HHHH
 ```
 
 Rules:
 
 - Hunk header must be exactly `@@`.
-- No source line numbers, ranges, duplicate counters, perfect hashes, or fuzzy anchors.
+- No source line numbers, duplicate counters, perfect hashes, or fuzzy anchors.
 - Operation prefixes: space = context, `-` = delete, `+` = insert.
 - Context/delete operations contain only a hash (` HHHH`, `-HHHH`). Insert operations contain literal content after `+`.
-- Sequence must match exactly one contiguous span in current target file.
+- ` ...` preserves every target line between the nearest surrounding context hashes while avoiding long context in the patch.
+- `-...` deletes every target line between the nearest surrounding context hashes. Add `+` lines after it to replace that range.
+- Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
 - Zero matches = stale hunk. More than one match = ambiguous hunk.
 - Pure insertion has empty match sequence and is supported only when target file has zero logical lines.
 

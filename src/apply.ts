@@ -20,7 +20,7 @@ export interface PatchHunkReceipt {
   lines: PatchReceiptLine[];
 }
 
-export type PatchTranscriptLineKind = "context" | "delete" | "insert";
+export type PatchTranscriptLineKind = "context" | "delete" | "insert" | "contextRange";
 
 export interface PatchTranscriptLine {
   kind: PatchTranscriptLineKind;
@@ -36,7 +36,7 @@ export interface PatchHunkTranscript {
 export interface PatchHunkAudit {
   hunkIndex: number;
   matchStart: number | null;
-  matchHashes: string[];
+  matchPattern: string[];
   survivingContextHashes: string[];
   insertedHashes: string[];
   deletedHashes: string[];
@@ -110,9 +110,9 @@ function renderPatchReceiptLine(line: PatchReceiptLine): string {
 }
 
 function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {
-  const matchHashes = hunk.ops.filter((op) => op.kind !== "insert").map((op) => op.hash);
+  const matchPattern = buildMatchPattern(hunk);
 
-  if (matchHashes.length === 0) {
+  if (matchPattern.length === 0) {
     if (lines.length === 0 && hunk.ops.every((op) => op.kind === "insert")) {
       const insertedHashes = hunk.ops.map((op) => hashFn(op.content));
       return {
@@ -129,7 +129,7 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
         audit: {
           hunkIndex,
           matchStart: null,
-          matchHashes,
+          matchPattern: [],
           survivingContextHashes: [],
           insertedHashes,
           deletedHashes: []
@@ -139,19 +139,24 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
     throw new UnsupportedHunkError(`Hunk ${hunkIndex} has no context/deletion hashes; pure insertion requires an empty file.`);
   }
 
+  validateSparseRanges(hunk, hunkIndex);
+
   const currentHashes = lines.map(hashFn);
-  const matches = findContiguousMatches(currentHashes, matchHashes);
+  const matches = hunkHasSparseRange(hunk)
+    ? findSparseMatches(currentHashes, hunk.ops, 2)
+    : findContiguousMatches(currentHashes, hunk.ops.filter(isHashMatchOp).map((op) => op.hash)).map((start) =>
+        contiguousMatchToSparseMatch(hunk.ops, start)
+      );
   if (matches.length === 0) {
-    throw new StaleHunkError(`Hunk ${hunkIndex} match sequence ${matchHashes.join(" ")} was not found.`);
+    throw new StaleHunkError(`Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} was not found.`);
   }
   if (matches.length > 1) {
     throw new AmbiguousHunkError(
-      `Hunk ${hunkIndex} match sequence ${matchHashes.join(" ")} matched ${matches.length} spans.`
+      `Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} matched ${matches.length} spans.`
     );
   }
 
-  const start = matches[0];
-  let consumed = 0;
+  const match = matches[0];
   const replacement: string[] = [];
   const receiptLines: PatchReceiptLine[] = [];
   const survivingContextHashes: string[] = [];
@@ -159,7 +164,7 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
   const deletedHashes: string[] = [];
   const transcriptLines: PatchTranscriptLine[] = [];
 
-  for (const op of hunk.ops) {
+  for (const [opIndex, op] of hunk.ops.entries()) {
     if (op.kind === "insert") {
       replacement.push(op.content);
       transcriptLines.push({ kind: "insert", content: op.content });
@@ -169,7 +174,30 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
       continue;
     }
 
-    const targetContent = lines[start + consumed];
+    if (op.kind === "range") {
+      const range = match.ranges.get(opIndex);
+      if (!range) {
+        throw new Error("Internal patch error: missing sparse range match.");
+      }
+      if (op.rangeKind === "context") {
+        replacement.push(...lines.slice(range.start, range.end));
+        transcriptLines.push({ kind: "contextRange", content: renderSkippedContextRange(range.end - range.start) });
+      } else {
+        for (let lineIndex = range.start; lineIndex < range.end; lineIndex += 1) {
+          const targetContent = lines[lineIndex];
+          const targetHash = hashFn(targetContent);
+          transcriptLines.push({ kind: "delete", content: targetContent });
+          deletedHashes.push(targetHash);
+        }
+      }
+      continue;
+    }
+
+    const targetIndex = match.lineIndexes.get(opIndex);
+    if (targetIndex === undefined) {
+      throw new Error("Internal patch error: missing hash operation match.");
+    }
+    const targetContent = lines[targetIndex];
     const targetHash = hashFn(targetContent);
     if (op.kind === "context") {
       replacement.push(targetContent);
@@ -180,22 +208,127 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
       transcriptLines.push({ kind: "delete", content: targetContent });
       deletedHashes.push(targetHash);
     }
-    consumed += 1;
   }
 
   return {
-    lines: [...lines.slice(0, start), ...replacement, ...lines.slice(start + matchHashes.length)],
+    lines: [...lines.slice(0, match.start), ...replacement, ...lines.slice(match.end)],
     receipt: { hunkIndex, lines: receiptLines },
-    transcript: { hunkIndex, matchStart: start, lines: transcriptLines },
+    transcript: { hunkIndex, matchStart: match.start, lines: transcriptLines },
     audit: {
       hunkIndex,
-      matchStart: start,
-      matchHashes,
+      matchStart: match.start,
+      matchPattern,
       survivingContextHashes,
       insertedHashes,
       deletedHashes
     }
   };
+}
+
+interface SparseMatch {
+  start: number;
+  end: number;
+  lineIndexes: Map<number, number>;
+  ranges: Map<number, { start: number; end: number }>;
+}
+
+function isHashMatchOp(op: Hunk["ops"][number]): op is Hunk["ops"][number] & { kind: "context" | "delete" } {
+  return op.kind === "context" || op.kind === "delete";
+}
+
+function hunkHasSparseRange(hunk: Hunk): boolean {
+  return hunk.ops.some((op) => op.kind === "range");
+}
+
+function buildMatchPattern(hunk: Hunk): string[] {
+  return hunk.ops.flatMap((op) => {
+    if (op.kind === "insert") return [];
+    if (op.kind === "range") return [`${op.rangeKind === "context" ? " " : "-"}...`];
+    return [op.hash];
+  });
+}
+
+function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
+  for (const [opIndex, op] of hunk.ops.entries()) {
+    if (op.kind !== "range") continue;
+    const previousHashOp = findNearestHashOp(hunk.ops, opIndex, -1);
+    const nextHashOp = findNearestHashOp(hunk.ops, opIndex, 1);
+    if (previousHashOp?.kind !== "context" || nextHashOp?.kind !== "context") {
+      throw new UnsupportedHunkError(`Hunk ${hunkIndex} '${op.rangeKind === "delete" ? "-..." : " ..."}' must be between context hashes.`);
+    }
+  }
+}
+
+function findNearestHashOp(ops: readonly Hunk["ops"][number][], start: number, step: -1 | 1): Hunk["ops"][number] | undefined {
+  for (let index = start + step; index >= 0 && index < ops.length; index += step) {
+    const op = ops[index];
+    if (isHashMatchOp(op)) return op;
+  }
+  return undefined;
+}
+
+function contiguousMatchToSparseMatch(ops: readonly Hunk["ops"][number][], start: number): SparseMatch {
+  const lineIndexes = new Map<number, number>();
+  let consumed = 0;
+  for (const [opIndex, op] of ops.entries()) {
+    if (!isHashMatchOp(op)) continue;
+    lineIndexes.set(opIndex, start + consumed);
+    consumed += 1;
+  }
+  return { start, end: start + consumed, lineIndexes, ranges: new Map() };
+}
+
+function findSparseMatches(hashes: string[], ops: readonly Hunk["ops"][number][], maxMatches: number): SparseMatch[] {
+  const matches: SparseMatch[] = [];
+  for (let start = 0; start <= hashes.length && matches.length < maxMatches; start += 1) {
+    collectSparseMatches({ hashes, ops, opIndex: 0, position: start, start, lineIndexes: new Map(), ranges: new Map(), matches, maxMatches });
+  }
+  return matches;
+}
+
+function collectSparseMatches(state: {
+  hashes: string[];
+  ops: readonly Hunk["ops"][number][];
+  opIndex: number;
+  position: number;
+  start: number;
+  lineIndexes: Map<number, number>;
+  ranges: Map<number, { start: number; end: number }>;
+  matches: SparseMatch[];
+  maxMatches: number;
+}): void {
+  if (state.matches.length >= state.maxMatches) return;
+  const opIndex = nextMatchOpIndex(state.ops, state.opIndex);
+  if (opIndex === undefined) {
+    state.matches.push({ start: state.start, end: state.position, lineIndexes: state.lineIndexes, ranges: state.ranges });
+    return;
+  }
+
+  const op = state.ops[opIndex];
+  if (isHashMatchOp(op)) {
+    if (state.hashes[state.position] !== op.hash) return;
+    const lineIndexes = new Map(state.lineIndexes);
+    lineIndexes.set(opIndex, state.position);
+    collectSparseMatches({ ...state, opIndex: opIndex + 1, position: state.position + 1, lineIndexes });
+    return;
+  }
+
+  for (let end = state.position; end <= state.hashes.length && state.matches.length < state.maxMatches; end += 1) {
+    const ranges = new Map(state.ranges);
+    ranges.set(opIndex, { start: state.position, end });
+    collectSparseMatches({ ...state, opIndex: opIndex + 1, position: end, ranges });
+  }
+}
+
+function nextMatchOpIndex(ops: readonly Hunk["ops"][number][], start: number): number | undefined {
+  for (let index = start; index < ops.length; index += 1) {
+    if (ops[index].kind !== "insert") return index;
+  }
+  return undefined;
+}
+
+function renderSkippedContextRange(lineCount: number): string {
+  return lineCount === 0 ? "..." : `... ${lineCount} skipped context line${lineCount === 1 ? "" : "s"}`;
 }
 
 function findContiguousMatches(hashes: string[], sequence: string[]): number[] {
