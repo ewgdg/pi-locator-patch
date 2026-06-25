@@ -62,7 +62,7 @@ describe("patch visible receipt", () => {
     await expect(readFile(file, "utf8")).resolves.toBe("a\nnew\nz\n");
   });
 
-  it("returns full content diff only in details.diff", async () => {
+  it("returns applied patch transcript in details.diff", async () => {
     const universal = [
       "*** Begin Patch",
       "*** Update File: file.txt",
@@ -80,6 +80,30 @@ describe("patch visible receipt", () => {
     expect(detailsDiff(result)).toContain("+++ b/file.txt");
     expect(detailsDiff(result)).toContain("-old");
     expect(detailsDiff(result)).toContain("+new");
+  });
+  it("does not expand update details to the whole file", async () => {
+    const lines = Array.from({ length: 100 }, (_, index) => `line-${index}`);
+    const universal = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      row(" ", "line-49"),
+      row("-", "line-50"),
+      row("+", "changed"),
+      row(" ", "line-51"),
+      "*** End Patch"
+    ].join("\n");
+
+    const { result } = await patchFile(lines.join("\n"), universal);
+    const diff = detailsDiff(result);
+
+    expect(diff).toContain("@@ matched line 50 @@");
+    expect(diff).toContain(" line-49");
+    expect(diff).toContain("-line-50");
+    expect(diff).toContain("+changed");
+    expect(diff).toContain(" line-51");
+    expect(diff).not.toContain("line-0");
+    expect(diff.split("\n")).toHaveLength(7);
   });
 
   it("adds a new file from a universal Add File section and shows hash-only add receipt", async () => {

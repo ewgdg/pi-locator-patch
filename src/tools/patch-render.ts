@@ -103,7 +103,6 @@ export function buildPatchResultRenderText(options: {
     dryRun ? "Patch dry-run succeeded" : "Patch applied",
     theme.fg("toolDiffAdded", `+${stats.additions}`),
     theme.fg("toolDiffRemoved", `-${stats.removals}`),
-    theme.fg("dim", `${stats.totalLines} diff lines`)
   ];
   const renderedDiff = formatPatchResultDiff(diff, expanded, theme);
 

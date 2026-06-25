@@ -100,7 +100,7 @@ Deleted hashes are omitted from visible output. If receipt has no surviving cont
 
 ## `details.diff`
 
-Tool result details include `details.diff`: unified diff with real file content for host/UI. It covers add, update, and delete. This diff is not placed in model-visible output. Pi TUI human rendering reads this field and shows a colorized diff preview in collapsed mode, with a larger diff view when expanded.
+Tool result details include `details.diff`: a human patch transcript for host/UI. Add entries show added input lines, update entries show resolved hunk transcript lines, and delete entries summarize deletion without dumping deleted content. This diff is not placed in model-visible output. Pi TUI human rendering reads this field and shows a colorized preview in collapsed mode, with a larger transcript view when expanded.
 
 ## Collision risk
 

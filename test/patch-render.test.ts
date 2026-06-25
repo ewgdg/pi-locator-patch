@@ -93,6 +93,8 @@ describe("patch result renderer helpers", () => {
     });
 
     expect(rendered).toContain("Patch dry-run succeeded");
+    expect(rendered).toContain("<toolDiffAdded>+1</toolDiffAdded>");
+    expect(rendered).toContain("<toolDiffRemoved>-1</toolDiffRemoved>");
     expect(rendered).toContain("<toolDiffRemoved>-old</toolDiffRemoved>");
     expect(rendered).toContain("<toolDiffAdded>+new</toolDiffAdded>");
     expect(rendered).not.toContain("*** Update File: file");

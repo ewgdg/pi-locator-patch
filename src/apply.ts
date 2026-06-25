@@ -20,6 +20,19 @@ export interface PatchHunkReceipt {
   lines: PatchReceiptLine[];
 }
 
+export type PatchTranscriptLineKind = "context" | "delete" | "insert";
+
+export interface PatchTranscriptLine {
+  kind: PatchTranscriptLineKind;
+  content: string;
+}
+
+export interface PatchHunkTranscript {
+  hunkIndex: number;
+  matchStart: number | null;
+  lines: PatchTranscriptLine[];
+}
+
 export interface PatchHunkAudit {
   hunkIndex: number;
   matchStart: number | null;
@@ -35,6 +48,7 @@ export interface ApplyPatchResult {
   renderedHashLines: string;
   hunkReceipts: PatchHunkReceipt[];
   hunkAudits: PatchHunkAudit[];
+  hunkTranscripts: PatchHunkTranscript[];
   renderedReceipt: string;
   receiptHashLineCount: number;
 }
@@ -42,6 +56,7 @@ export interface ApplyPatchResult {
 interface AppliedHunk {
   lines: string[];
   receipt: PatchHunkReceipt;
+  transcript: PatchHunkTranscript;
   audit: PatchHunkAudit;
 }
 
@@ -56,12 +71,14 @@ export function applyPatchToText(
   let currentLines = [...model.lines];
   const hunkReceipts: PatchHunkReceipt[] = [];
   const hunkAudits: PatchHunkAudit[] = [];
+  const hunkTranscripts: PatchHunkTranscript[] = [];
 
   for (const [hunkOffset, hunk] of patch.hunks.entries()) {
     const applied = applyHunk(currentLines, hunk, hunkOffset + 1, hashFn);
     currentLines = applied.lines;
     hunkReceipts.push(applied.receipt);
     hunkAudits.push(applied.audit);
+    hunkTranscripts.push(applied.transcript);
   }
 
   const finalText = serializeText({
@@ -76,6 +93,7 @@ export function applyPatchToText(
     renderedHashLines: renderHashLines(entries),
     hunkReceipts,
     hunkAudits,
+    hunkTranscripts,
     renderedReceipt: renderPatchReceipt(hunkReceipts),
     receiptHashLineCount: hunkReceipts.reduce((count, receipt) => count + receipt.lines.length, 0)
   };
@@ -102,6 +120,11 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
         receipt: {
           hunkIndex,
           lines: insertedHashes.map((hash) => ({ kind: "insert", hash }))
+        },
+        transcript: {
+          hunkIndex,
+          matchStart: null,
+          lines: hunk.ops.map((op) => ({ kind: "insert", content: op.content }))
         },
         audit: {
           hunkIndex,
@@ -134,10 +157,12 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
   const survivingContextHashes: string[] = [];
   const insertedHashes: string[] = [];
   const deletedHashes: string[] = [];
+  const transcriptLines: PatchTranscriptLine[] = [];
 
   for (const op of hunk.ops) {
     if (op.kind === "insert") {
       replacement.push(op.content);
+      transcriptLines.push({ kind: "insert", content: op.content });
       const insertedHash = hashFn(op.content);
       insertedHashes.push(insertedHash);
       receiptLines.push({ kind: "insert", hash: insertedHash });
@@ -148,9 +173,11 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
     const targetHash = hashFn(targetContent);
     if (op.kind === "context") {
       replacement.push(targetContent);
+      transcriptLines.push({ kind: "context", content: targetContent });
       survivingContextHashes.push(targetHash);
       receiptLines.push({ kind: "context", hash: targetHash });
     } else {
+      transcriptLines.push({ kind: "delete", content: targetContent });
       deletedHashes.push(targetHash);
     }
     consumed += 1;
@@ -159,6 +186,7 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
   return {
     lines: [...lines.slice(0, start), ...replacement, ...lines.slice(start + matchHashes.length)],
     receipt: { hunkIndex, lines: receiptLines },
+    transcript: { hunkIndex, matchStart: start, lines: transcriptLines },
     audit: {
       hunkIndex,
       matchStart: start,

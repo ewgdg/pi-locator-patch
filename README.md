@@ -57,7 +57,7 @@ Preferred syntax is Codex-like universal patch text:
 
 Update hunks are located by exact contiguous sequence of context/delete hashes. Context/delete operations contain only the 4-character hash (` HHHH`, `-HHHH`); insert operations contain literal new content (`+new text`). Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
-Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Full content diff is not shown in model-visible output; it stays in `details.diff`. In Pi TUI, the `patch` result renderer uses `details.diff` for the human view: collapsed output shows a compact colorized diff preview, and expanded output shows a much larger diff window.
+Success output is compact and model-visible: file operation headers plus hash-only receipt/status. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
 
 File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a retry patch file path containing the failed operation plus skipped later operations. `dry_run: true` validates the full patch without writing.
 
@@ -72,7 +72,7 @@ File operations apply sequentially. If a later non-dry operation fails, earlier 
 Deleted file
 ```
 
-Delete File uses Codex behavior: the section contains only `*** Delete File: path`. It hard-deletes the resolved regular file after validation. Deleted content is omitted from visible output; `details.diff` contains full content diff for UI/host.
+Delete File uses Codex behavior: the section contains only `*** Delete File: path`. It hard-deletes the resolved regular file after validation. Deleted content is omitted from visible output and human diff details.
 
 ## Validate
 

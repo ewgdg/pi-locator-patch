@@ -6,7 +6,7 @@ import { defineTool, withFileMutationQueue } from "@earendil-works/pi-coding-age
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
-import { renderUnifiedContentDiffs, type FileContentDiffInput } from "../content-diff.js";
+import { renderPatchTranscriptDiffs, type PatchTranscriptDiffInput } from "../content-diff.js";
 import { FileTextError, InvalidPatchError, PartialPatchError } from "../errors.js";
 import {
   assertExistingTextFileMutationTarget,
@@ -66,7 +66,7 @@ export const patchTool = defineTool({
     "Update matching uses only context/delete hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
     "Delete File sections match Codex behavior: use only the file header and no body. The tool hard-deletes the resolved regular file after validation; visible output exposes no deleted content.",
     "During non-dry apply failures, the tool stops at the failed operation and writes a retry patch file containing the failed operation plus skipped later operations.",
-    "On success, visible output is a compact hash-only receipt/status. Full content diff is available only in details.diff for the host/UI."
+    "On success, visible output is a compact hash-only receipt/status. Human diff details render the applied patch transcript for the host/UI."
   ],
   parameters: Type.Object(
     {
@@ -330,7 +330,7 @@ function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryR
     content: [{ type: "text" as const, text: receipt.text }],
     details: {
       dryRun,
-      diff: renderUnifiedContentDiffs(plannedChanges.map(toDiffInput)),
+      diff: renderPatchTranscriptDiffs(plannedChanges.map(toDiffInput)),
       files: plannedChanges.map((change) => ({
         path: change.targetPath,
         patchPath: change.patchPath,
@@ -452,12 +452,13 @@ function renderFileReceipt(change: PlannedFileChange): string {
   return [`*** Update File: ${change.patchPath}`, change.applyResult.renderedReceipt].join("\n");
 }
 
-function toDiffInput(change: PlannedFileChange): FileContentDiffInput {
+function toDiffInput(change: PlannedFileChange): PatchTranscriptDiffInput {
   return {
     kind: change.operation,
     path: change.patchPath,
     oldText: change.oldText,
-    newText: change.newText
+    newText: change.newText,
+    applyResult: change.applyResult
   };
 }
 

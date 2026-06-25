@@ -1,86 +1,57 @@
+import type { ApplyPatchResult, PatchTranscriptLine } from "./apply.js";
 import { parseText } from "./text-lines.js";
 
-export type FileDiffKind = "add" | "update" | "delete";
+export type PatchTranscriptDiffKind = "add" | "update" | "delete";
 
-export interface FileContentDiffInput {
-  kind: FileDiffKind;
+export interface PatchTranscriptDiffInput {
+  kind: PatchTranscriptDiffKind;
   path: string;
   oldText?: string;
   newText?: string;
+  applyResult?: ApplyPatchResult;
 }
 
-interface DiffRow {
-  prefix: " " | "-" | "+";
-  content: string;
+export function renderPatchTranscriptDiffs(inputs: readonly PatchTranscriptDiffInput[]): string {
+  return inputs.map(renderPatchTranscriptDiff).join("\n");
 }
 
-export function renderUnifiedContentDiffs(inputs: readonly FileContentDiffInput[]): string {
-  return inputs.map(renderUnifiedContentDiff).join("\n");
+export function renderPatchTranscriptDiff(input: PatchTranscriptDiffInput): string {
+  return [renderOldPathHeader(input), renderNewPathHeader(input), ...renderTranscriptBody(input)].join("\n");
 }
 
-export function renderUnifiedContentDiff(input: FileContentDiffInput): string {
-  const oldLines = input.oldText === undefined ? [] : parseText(input.oldText).lines;
-  const newLines = input.newText === undefined ? [] : parseText(input.newText).lines;
-  const oldPath = input.kind === "add" ? "/dev/null" : `a/${input.path}`;
-  const newPath = input.kind === "delete" ? "/dev/null" : `b/${input.path}`;
-  const rows = input.kind === "add"
-    ? newLines.map<DiffRow>((content) => ({ prefix: "+", content }))
-    : input.kind === "delete"
-      ? oldLines.map<DiffRow>((content) => ({ prefix: "-", content }))
-      : diffRows(oldLines, newLines);
-
-  return [
-    `--- ${oldPath}`,
-    `+++ ${newPath}`,
-    `@@ -${hunkRange(oldLines.length)} +${hunkRange(newLines.length)} @@`,
-    ...rows.map((row) => `${row.prefix}${row.content}`)
-  ].join("\n");
+function renderOldPathHeader(input: PatchTranscriptDiffInput): string {
+  return `--- ${input.kind === "add" ? "/dev/null" : `a/${input.path}`}`;
 }
 
-function hunkRange(lineCount: number): string {
-  return lineCount === 0 ? "0,0" : `1,${lineCount}`;
+function renderNewPathHeader(input: PatchTranscriptDiffInput): string {
+  return `+++ ${input.kind === "delete" ? "/dev/null" : `b/${input.path}`}`;
 }
 
-function diffRows(oldLines: readonly string[], newLines: readonly string[]): DiffRow[] {
-  const table = buildLcsTable(oldLines, newLines);
-  const rows: DiffRow[] = [];
-  let oldIndex = 0;
-  let newIndex = 0;
-
-  while (oldIndex < oldLines.length && newIndex < newLines.length) {
-    if (oldLines[oldIndex] === newLines[newIndex]) {
-      rows.push({ prefix: " ", content: oldLines[oldIndex] });
-      oldIndex += 1;
-      newIndex += 1;
-    } else if (table[oldIndex + 1][newIndex] >= table[oldIndex][newIndex + 1]) {
-      rows.push({ prefix: "-", content: oldLines[oldIndex] });
-      oldIndex += 1;
-    } else {
-      rows.push({ prefix: "+", content: newLines[newIndex] });
-      newIndex += 1;
-    }
+function renderTranscriptBody(input: PatchTranscriptDiffInput): string[] {
+  if (input.kind === "add") {
+    return ["@@ add file @@", ...parseText(input.newText ?? "").lines.map((line) => `+${line}`)];
   }
 
-  while (oldIndex < oldLines.length) {
-    rows.push({ prefix: "-", content: oldLines[oldIndex] });
-    oldIndex += 1;
-  }
-  while (newIndex < newLines.length) {
-    rows.push({ prefix: "+", content: newLines[newIndex] });
-    newIndex += 1;
+  if (input.kind === "delete") {
+    return ["@@ delete file @@", `-${deletedFileSummary(input.oldText ?? "")}`];
   }
 
-  return rows;
+  if (!input.applyResult) {
+    throw new Error("Update diff transcript requires applyResult.");
+  }
+
+  return input.applyResult.hunkTranscripts.flatMap((hunk) => [
+    hunk.matchStart === null ? "@@ empty file @@" : `@@ matched line ${hunk.matchStart + 1} @@`,
+    ...hunk.lines.map(renderTranscriptLine)
+  ]);
 }
 
-function buildLcsTable(oldLines: readonly string[], newLines: readonly string[]): number[][] {
-  const table = Array.from({ length: oldLines.length + 1 }, () => Array.from({ length: newLines.length + 1 }, () => 0));
-  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
-    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
-      table[oldIndex][newIndex] = oldLines[oldIndex] === newLines[newIndex]
-        ? table[oldIndex + 1][newIndex + 1] + 1
-        : Math.max(table[oldIndex + 1][newIndex], table[oldIndex][newIndex + 1]);
-    }
-  }
-  return table;
+function renderTranscriptLine(line: PatchTranscriptLine): string {
+  const prefix = line.kind === "insert" ? "+" : line.kind === "delete" ? "-" : " ";
+  return `${prefix}${line.content}`;
+}
+
+function deletedFileSummary(text: string): string {
+  const lineCount = parseText(text).lines.length;
+  return `Deleted file (${lineCount} line${lineCount === 1 ? "" : "s"})`;
 }
