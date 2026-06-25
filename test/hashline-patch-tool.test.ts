@@ -6,7 +6,7 @@ import { hashLine, parseText } from "../src/api.js";
 import { patchTool } from "../src/tools/hashline-patch.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
-const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
   if (content.type !== "text") {

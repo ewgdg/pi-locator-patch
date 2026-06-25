@@ -33,7 +33,7 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
 
 6. **Implement patch data types and parser**
    - File: `src/patch-format.ts`
-   - Changes: define `Patch`, `Hunk`, `PatchOp`; parse one single-file patch; allow optional `--- ...` and `+++ ...` headers; hunk header must be exactly `@@ @@`; op lines must be ` HHHH│content`, `-HHHH│content`, or `+HHHH│content`; reject multiple file sections, line-number hunk headers, bad hashes, malformed lines; validate every patch line hash equals included content.
+   - Changes: define `Patch`, `Hunk`, `PatchOp`; parse one single-file patch; allow optional `--- ...` and `+++ ...` headers; hunk header must be exactly `@@ @@`; context/delete op lines are hash-only (` HHHH`, `-HHHH`), insert op lines are literal content (`+new content`); reject multiple file sections, line-number hunk headers, bad hashes, malformed lines, and pasted `HASH│content` rows in patch operations.
    - Acceptance: parser accepts hash-only unified shape and rejects `@@ -1,2 +1,2 @@`.
 
 7. **Implement named errors**
@@ -117,17 +117,17 @@ Build fresh TypeScript `pi-hashline-patch` extension with stable 4-char hashline
 --- a/path optional
 +++ b/path optional
 @@ @@
- HHHH│context content
--HHHH│deleted content
-+HHHH│inserted content
+ HHHH
+-HHHH
++inserted content
 ```
 - Hunk header exactly `@@ @@`; no line numbers, ranges, counters, or hash sequence duplication.
 - Body defines match sequence: all context/deletion hashes in order; insertions excluded.
-- Parser validates every `HASH│content` against `hashLine(content)`.
+- Context/delete rows contain only hashes; insert rows contain literal content. Insert rows that look like pasted `HASH│content` are rejected to avoid stale-anchor mistakes.
 
 ## Test Cases
 - Hash/read: same content same hash across positions; duplicates same hash; 4-char base64url; separator in content; empty line; Unicode; empty file; final newline preservation; CRLF preservation.
-- Patch parse: accept optional file headers; reject bad hash width/alphabet; reject malformed `HASH│content`; reject line-number hunk header; validate hash/content mismatch for context/delete/insert.
+- Patch parse: accept optional file headers; reject bad hash width/alphabet; reject pasted `HASH│content` in context/delete/insert operations; reject line-number hunk header.
 - Apply success: replace one line with unique context; delete with unique context; insert between context lines; multiple hunks sequential; duplicate line elsewhere OK when full sequence unique; insertion hash equals returned hash.
 - Apply stale: absent sequence; changed context hash; changed deletion hash; multi-hunk failure leaves original file unchanged.
 - Apply ambiguous: same match sequence twice; single duplicate deletion with no unique context; pure insertion into non-empty file rejected; mocked hash collision via injectable hash function.

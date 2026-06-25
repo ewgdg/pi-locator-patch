@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hashLine, parsePatchInput, parseUniversalPatch } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 
 describe("universal patch parser", () => {
   it("accepts Codex-like add, update, and delete file sections", () => {

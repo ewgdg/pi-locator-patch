@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hashLine, parsePatch } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 
 describe("patch parser", () => {
   it("accepts optional file headers and hash-only hunks", () => {
@@ -20,7 +20,7 @@ describe("patch parser", () => {
     expect(() => parsePatch(`@@ -1,1 +1,1 @@\n${row(" ", "ctx")}`)).toThrow("[E_INVALID_PATCH]");
   });
 
-  it("rejects bad hashes and hash/content mismatches", () => {
+  it("rejects bad hashes and pasted hashline rows", () => {
     expect(() => parsePatch("@@ @@\n abcd│ctx")).toThrow("[E_INVALID_PATCH]");
     expect(() => parsePatch("@@ @@\n a*c!│ctx")).toThrow("[E_INVALID_PATCH]");
     expect(() => parsePatch(`@@ @@\n+${hashLine("actual")}│different`)).toThrow("[E_INVALID_PATCH]");

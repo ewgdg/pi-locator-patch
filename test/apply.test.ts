@@ -7,7 +7,7 @@ import {
   hashLine
 } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => `${prefix}${hashFn(content)}│${content}`;
+const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashFn(content)}`;
 const patch = (...lines: string[]) => ["@@ @@", ...lines].join("\n");
 
 describe("applyPatchToText", () => {

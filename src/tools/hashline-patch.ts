@@ -47,13 +47,13 @@ export const patchTool = defineTool({
   name: "patch",
   label: "Hashline Patch",
   description: "Apply a Codex-like multi-file hashline patch with Add File, Update File, and Delete File sections.",
-  promptSnippet: "patch accepts *** Begin Patch / *** Add File / *** Update File / *** Delete File / *** End Patch; updates use exact HASH│content anchors.",
+  promptSnippet: "patch accepts *** Begin Patch / *** Add File / *** Update File / *** Delete File / *** End Patch; updates use hash-only context/delete anchors from read plus literal inserted lines.",
   promptGuidelines: [
     "Prefer universal patch input: '*** Begin Patch', one or more file operation headers, then '*** End Patch'.",
     "Add File body lines are literal new file content prefixed with '+'. Target file must not already exist. Visible receipt shows only '*** Add File: path' and '+HASH' rows.",
-    "Update File sections use '@@ @@' hunks and operation lines like ' HHHH│context', '-HHHH│old', '+HHHH│new'.",
-    "Update matching uses only context/deletion hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
-    "Delete File sections require delete-only hashline hunks proving the complete current file content. The tool hard-deletes the resolved regular file after validation; visible output exposes no deleted content.",
+    "Update File sections use '@@ @@' hunks. Context/delete lines are hash-only (' HHHH', '-HHHH'); insert lines are literal content ('+new text'). Do not paste HASH│content rows into patch operations.",
+    "Update matching uses only context/delete hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
+    "Delete File sections require delete-only hash lines proving the complete current file content. The tool hard-deletes the resolved regular file after validation; visible output exposes no deleted content.",
     "On success, visible output is a compact hash-only receipt/status. Full content diff is available only in details.diff for the host/UI."
   ],
   parameters: Type.Object(

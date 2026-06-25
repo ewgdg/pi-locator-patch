@@ -22,12 +22,12 @@ Preferred `patch` input is Codex-like and carries file paths:
 +literal new file line
 *** Update File: existing.txt
 @@ @@
- HHHH│context content
--HHHH│deleted content
-+HHHH│inserted content
+ HHHH
+-HHHH
++literal inserted content
 *** Delete File: old.txt
 @@ @@
--HHHH│old file line
+-HHHH
 *** End Patch
 ```
 
@@ -52,9 +52,9 @@ Update sections use hashline hunks:
 
 ```diff
 @@ @@
- HHHH│context content
--HHHH│deleted content
-+HHHH│inserted content
+ HHHH
+-HHHH
++literal inserted content
 ```
 
 Rules:
@@ -62,8 +62,7 @@ Rules:
 - Hunk header must be exactly `@@ @@`.
 - No source line numbers, ranges, duplicate counters, perfect hashes, or fuzzy anchors.
 - Operation prefixes: space = context, `-` = delete, `+` = insert.
-- Parser validates each operation hash equals included content.
-- Match sequence is context + deletion hashes in order. Insertions do not participate.
+- Context/delete operations contain only a hash (` HHHH`, `-HHHH`). Insert operations contain literal content after `+`.
 - Sequence must match exactly one contiguous span in current target file.
 - Zero matches = stale hunk. More than one match = ambiguous hunk.
 - Pure insertion has empty match sequence and is supported only when target file has zero logical lines.
@@ -75,8 +74,8 @@ Delete sections use update-style hashline evidence but must be delete-only:
 ```diff
 *** Delete File: old.txt
 @@ @@
--HHHH│line one
--HHHH│line two
+-HHHH
+-HHHH
 ```
 
 Delete is a hard delete of the resolved regular file after validation. Validation requires:

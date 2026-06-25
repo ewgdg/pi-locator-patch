@@ -46,16 +46,16 @@ Preferred syntax is Codex-like universal patch text:
 +literal new file line
 *** Update File: existing.txt
 @@ @@
- HHHH│context
--HHHH│deleted
-+HHHH│inserted
+ HHHH
+-HHHH
++literal inserted line
 *** Delete File: old.txt
 @@ @@
--HHHH│old file line
+-HHHH
 *** End Patch
 ```
 
-Update hunks are located by exact contiguous sequence of context/deletion hashes. Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+Update hunks are located by exact contiguous sequence of context/delete hashes. Context/delete operations contain only the 4-character hash (` HHHH`, `-HHHH`); insert operations contain literal new content (`+new text`). Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
 Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Full content diff is not shown in model-visible output; it stays in `details.diff`. In Pi TUI, the `patch` result renderer uses `details.diff` for the human view: collapsed output shows a compact colorized diff preview, and expanded output shows a much larger diff window.
 

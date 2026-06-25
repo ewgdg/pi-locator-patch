@@ -12,7 +12,7 @@ import { patchTool } from "../src/tools/hashline-patch.js";
 import { readTool } from "../src/tools/hashline-read.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
-const row = (prefix: " " | "-" | "+", content: string) => `${prefix}${hashLine(content)}│${content}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;
 const oversizedContent = () => "x".repeat(LLM_VISIBLE_OUTPUT_MAX_BYTES + 1);
 const oneOverLineCap = () => Array.from({ length: LLM_VISIBLE_OUTPUT_MAX_LINES + 1 }, (_, index) => `line-${index}`);

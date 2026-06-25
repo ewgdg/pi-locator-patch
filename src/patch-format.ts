@@ -1,6 +1,5 @@
 import { InvalidPatchError } from "./errors.js";
-import { type HashFunction, hashLine } from "./hash.js";
-import { parseHashLine } from "./read-format.js";
+import { HASH_SEPARATOR, isHash, type HashFunction, hashLine } from "./hash.js";
 
 export type PatchOpKind = "context" | "delete" | "insert";
 
@@ -95,15 +94,26 @@ function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
     throw new InvalidPatchError(`Malformed patch operation '${line}'.`);
   }
 
-  const hashLine = parseHashLine(line.slice(1));
-  const expectedHash = hashFn(hashLine.content);
-  if (hashLine.hash !== expectedHash) {
-    throw new InvalidPatchError(
-      `Hash/content mismatch for ${kind} line: expected ${expectedHash}, got ${hashLine.hash}.`
-    );
+  const body = line.slice(1);
+  if (kind === "insert") {
+    if (looksLikeHashline(body)) {
+      throw new InvalidPatchError("Insert lines must be literal content prefixed with '+', not HASH│content from read output.");
+    }
+    return { kind, hash: hashFn(body), content: body };
   }
 
-  return { kind, ...hashLine };
+  if (!isHash(body)) {
+    const hint = body.includes(HASH_SEPARATOR)
+      ? "Use only the 4-character hash for context/delete lines; remove the HASH│content suffix."
+      : "Context/delete lines must contain only a 4-character hash.";
+    throw new InvalidPatchError(`Malformed ${kind} operation '${line}'. ${hint}`);
+  }
+
+  return { kind, hash: body, content: "" };
+}
+
+function looksLikeHashline(value: string): boolean {
+  return value.length > 4 && isHash(value.slice(0, 4)) && value[4] === HASH_SEPARATOR;
 }
 
 function splitPatchLines(text: string): string[] {
