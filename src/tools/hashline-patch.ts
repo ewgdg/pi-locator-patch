@@ -66,7 +66,7 @@ export const patchTool = defineTool({
     "Update matching uses only context/delete hash sequences. Do not use line numbers, duplicate counters, fuzzy fallback, or legacy replace fields.",
     "Delete File sections match Codex behavior: use only the file header and no body. The tool hard-deletes the resolved regular file after validation; visible output exposes no deleted content.",
     "During non-dry apply failures, the tool stops at the failed operation and writes a retry patch file containing the failed operation plus skipped later operations.",
-    "On success, visible output is a compact hash-only receipt/status. Human diff details render the applied patch transcript for the host/UI."
+    "On success, agent-visible output is a compact post-apply hash receipt/status for affected sections. Treat returned hashes as current for those sections."
   ],
   parameters: Type.Object(
     {
