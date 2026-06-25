@@ -2,6 +2,8 @@
 
 Pi extension package for stable hashline reads and hash-only patch apply.
 
+When loaded, the extension disables Pi's built-in `read` and `edit` tools for the session and enables `hashline_read` / `hashline_patch`. This keeps the model on the hashline protocol instead of mixing plain reads with hash-anchored patches.
+
 ## Tools
 
 ### `hashline_read`
