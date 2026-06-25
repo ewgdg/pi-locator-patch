@@ -8,6 +8,7 @@ export interface AddFileOperation {
   kind: "add";
   path: string;
   lines: string[];
+  finalNewline: boolean;
 }
 
 export interface UpdateFileOperation {
@@ -79,7 +80,8 @@ export function parsePatchInput(patchText: string, legacyPath?: string, hashFn: 
 
 function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction): UniversalPatchOperation {
   if (header.kind === "add") {
-    return { kind: "add", path: header.path, lines: parseAddFileLines(body) };
+    const lines = parseAddFileLines(body);
+    return { kind: "add", path: header.path, lines, finalNewline: addFileRequiresFinalNewline(lines) };
   }
 
   const patch = parsePatch(body.join("\n"), hashFn);
@@ -98,6 +100,11 @@ function parseAddFileLines(body: readonly string[]): string[] {
     }
     return line.slice(1);
   });
+}
+
+function addFileRequiresFinalNewline(lines: readonly string[]): boolean {
+  // A trailing '+' row is a logical blank line; it needs a terminator to parse back as a line, not as EOF.
+  return lines.at(-1) === "";
 }
 
 function validateDeleteFilePatch(patch: Patch): void {

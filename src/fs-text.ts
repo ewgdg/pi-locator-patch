@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, chmod, lstat, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { FileTextError } from "./errors.js";
 
@@ -25,6 +25,15 @@ export async function resolveExistingRealPath(cwd: string, inputPath: string): P
   } catch (error) {
     throw new FileTextError(`File not found: ${inputPath}`);
   }
+}
+
+export async function resolveNewTextFileTarget(cwd: string, inputPath: string): Promise<string> {
+  const absolutePath = resolveToolPath(cwd, inputPath);
+  await assertNewTextFileTarget(absolutePath);
+  const realParentDirectory = await realpath(dirname(absolutePath)).catch(() => {
+    throw new FileTextError(`Parent directory not found: ${dirname(absolutePath)}`);
+  });
+  return resolve(realParentDirectory, basename(absolutePath));
 }
 
 export async function readExistingTextFile(path: string, options: ReadTextFileOptions = {}): Promise<ReadTextFileResult> {
@@ -56,16 +65,10 @@ export async function readExistingTextFile(path: string, options: ReadTextFileOp
 }
 
 export async function writeTextFileAtomically(path: string, text: string): Promise<void> {
-  const realTargetPath = await realpath(path).catch(() => {
-    throw new FileTextError(`File not found: ${path}`);
-  });
-  const existingStats = await stat(realTargetPath);
-  if (!existingStats.isFile()) {
-    throw new FileTextError(`Path is not a regular text file: ${path}`);
-  }
+  const { realTargetPath, mode } = await assertExistingTextFileMutationTarget(path);
 
   // Always write the resolved target so editing a symlink updates its target, not the symlink inode.
-  await writeTextFileViaTemp(realTargetPath, text, existingStats.mode & 0o777);
+  await writeTextFileViaTemp(realTargetPath, text, mode);
 }
 
 export async function writeNewTextFileAtomically(path: string, text: string): Promise<void> {
@@ -81,7 +84,7 @@ export async function assertNewTextFileTarget(path: string): Promise<void> {
   await assertParentDirectory(path);
 }
 
-export async function deleteExistingRegularFile(path: string): Promise<void> {
+export async function assertExistingTextFileMutationTarget(path: string): Promise<{ realTargetPath: string; mode: number }> {
   const realTargetPath = await realpath(path).catch(() => {
     throw new FileTextError(`File not found: ${path}`);
   });
@@ -92,6 +95,12 @@ export async function deleteExistingRegularFile(path: string): Promise<void> {
   await access(realTargetPath, constants.R_OK | constants.W_OK).catch(() => {
     throw new FileTextError(`File is not readable and writable: ${path}`);
   });
+  await assertWritableDirectory(dirname(realTargetPath));
+  return { realTargetPath, mode: existingStats.mode & 0o777 };
+}
+
+export async function deleteExistingRegularFile(path: string): Promise<void> {
+  const { realTargetPath } = await assertExistingTextFileMutationTarget(path);
   await unlink(realTargetPath);
 }
 
@@ -110,8 +119,12 @@ async function assertParentDirectory(path: string): Promise<void> {
   if (!parentStats.isDirectory()) {
     throw new FileTextError(`Parent path is not a directory: ${parentDirectory}`);
   }
-  await access(parentDirectory, constants.R_OK | constants.W_OK).catch(() => {
-    throw new FileTextError(`Parent directory is not writable: ${parentDirectory}`);
+  await assertWritableDirectory(parentDirectory);
+}
+
+async function assertWritableDirectory(path: string): Promise<void> {
+  await access(path, constants.R_OK | constants.W_OK | constants.X_OK).catch(() => {
+    throw new FileTextError(`Directory is not readable and writable: ${path}`);
   });
 }
 

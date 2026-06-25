@@ -4,18 +4,19 @@ import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
 import { renderUnifiedContentDiffs, type FileContentDiffInput } from "../content-diff.js";
 import { InvalidPatchError } from "../errors.js";
 import {
+  assertExistingTextFileMutationTarget,
   assertNewTextFileTarget,
   deleteExistingRegularFile,
   readExistingTextFile,
   resolveExistingRealPath,
-  resolveToolPath,
+  resolveNewTextFileTarget,
   writeNewTextFileAtomically,
   writeTextFileAtomically
 } from "../fs-text.js";
 import { hashLine } from "../hash.js";
 import { countRenderedLines, getVisibleOutputOverflow, type VisibleOutputOverflow } from "../output-size.js";
-import { parseText } from "../text-lines.js";
-import { parsePatchInput, type UniversalPatchOperation } from "../universal-patch-format.js";
+import { parseText, serializeText } from "../text-lines.js";
+import { parsePatchInput, type AddFileOperation, type UniversalPatchOperation } from "../universal-patch-format.js";
 
 interface PatchReceiptDecision {
   text: string;
@@ -23,6 +24,11 @@ interface PatchReceiptDecision {
   omitReason?: "empty" | "too_large";
   overflow?: VisibleOutputOverflow;
   visibleLineCount: number;
+}
+
+interface OperationTarget {
+  operation: UniversalPatchOperation;
+  targetPath: string;
 }
 
 interface PlannedFileChange {
@@ -62,10 +68,11 @@ export const patchTool = defineTool({
     }
 
     const universalPatch = parsePatchInput(params.patch, params.path);
-    const queuePaths = [...new Set(universalPatch.operations.map((operation) => resolveToolPath(ctx.cwd, operation.path)))].sort();
+    const operationTargets = await prepareOperationTargets(ctx.cwd, universalPatch.operations);
+    const queuePaths = operationTargets.map((target) => target.targetPath).sort();
 
     return withMutationQueues(queuePaths, async () => {
-      const plannedChanges = await planFileChanges(ctx.cwd, universalPatch.operations);
+      const plannedChanges = await planFileChanges(operationTargets);
       const dryRun = params.dry_run ?? false;
       if (!dryRun) {
         for (const change of plannedChanges) {
@@ -110,18 +117,30 @@ export const patchTool = defineTool({
   }
 });
 
-async function planFileChanges(cwd: string, operations: readonly UniversalPatchOperation[]): Promise<PlannedFileChange[]> {
-  const plannedChanges: PlannedFileChange[] = [];
+async function prepareOperationTargets(cwd: string, operations: readonly UniversalPatchOperation[]): Promise<OperationTarget[]> {
+  const operationTargets: OperationTarget[] = [];
   for (const operation of operations) {
+    const targetPath = operation.kind === "add"
+      ? await resolveNewTextFileTarget(cwd, operation.path)
+      : await resolveExistingRealPath(cwd, operation.path);
+    operationTargets.push({ operation, targetPath });
+  }
+  rejectDuplicateResolvedTargets(operationTargets);
+  return operationTargets;
+}
+
+async function planFileChanges(operationTargets: readonly OperationTarget[]): Promise<PlannedFileChange[]> {
+  const plannedChanges: PlannedFileChange[] = [];
+  for (const operationTarget of operationTargets) {
+    const { operation, targetPath } = operationTarget;
     if (operation.kind === "add") {
-      const targetPath = resolveToolPath(cwd, operation.path);
-      const newText = operation.lines.join("\n");
+      const newText = serializeAddFileText(operation);
       await assertNewTextFileTarget(targetPath);
       plannedChanges.push({ operation: "add", patchPath: operation.path, targetPath, newText, addedHashes: operation.lines.map(hashLine) });
       continue;
     }
 
-    const targetPath = await resolveExistingRealPath(cwd, operation.path);
+    await assertExistingTextFileMutationTarget(targetPath);
     const { text: oldText } = await readExistingTextFile(targetPath, { writable: true });
     const applyResult = applyPatchToText(oldText, operation.patch);
 
@@ -134,6 +153,26 @@ async function planFileChanges(cwd: string, operations: readonly UniversalPatchO
     plannedChanges.push({ operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult });
   }
   return plannedChanges;
+}
+
+function rejectDuplicateResolvedTargets(operationTargets: readonly OperationTarget[]): void {
+  const seen = new Map<string, UniversalPatchOperation>();
+  for (const { operation, targetPath } of operationTargets) {
+    const existing = seen.get(targetPath);
+    if (existing) {
+      throw new InvalidPatchError(`Multiple operations resolve to the same target: ${existing.path} and ${operation.path}`);
+    }
+    seen.set(targetPath, operation);
+  }
+}
+
+function serializeAddFileText(operation: AddFileOperation): string {
+  return serializeText({
+    bom: false,
+    finalNewline: operation.finalNewline,
+    lines: operation.lines,
+    newline: "\n"
+  });
 }
 
 function assertDeletePatchRemovesWholeFile(path: string, oldText: string, applyResult: ApplyPatchResult): void {

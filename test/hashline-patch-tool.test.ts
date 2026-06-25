@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { hashLine } from "../src/api.js";
+import { hashLine, parseText } from "../src/api.js";
 import { patchTool } from "../src/tools/hashline-patch.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
@@ -90,6 +90,86 @@ describe("patch visible receipt", () => {
     await expect(readFile(join(dir, "added.txt"), "utf8")).resolves.toBe("already");
   });
 
+  it("writes Add File blank lines so receipt, diff, and file bytes agree", async () => {
+    const dir = await makeTempDir();
+    const patch = ["*** Begin Patch", "*** Add File: blank.txt", "+", "*** End Patch"].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
+    const writtenText = await readFile(join(dir, "blank.txt"), "utf8");
+
+    expect(writtenText).toBe("\n");
+    expect(parseText(writtenText).lines).toEqual([""]);
+    expect(resultText(result)).toBe(["*** Add File: blank.txt", `+${hashLine("")}`].join("\n"));
+    expect(detailsDiff(result).split("\n").at(-1)).toBe("+");
+  });
+
+  it("preserves Add File trailing blank rows in bytes, receipt, and details diff", async () => {
+    const dir = await makeTempDir();
+    const patch = ["*** Begin Patch", "*** Add File: trailing.txt", "+hello", "+", "*** End Patch"].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
+    const writtenText = await readFile(join(dir, "trailing.txt"), "utf8");
+
+    expect(writtenText).toBe("hello\n\n");
+    expect(parseText(writtenText).lines).toEqual(["hello", ""]);
+    expect(resultText(result)).toBe(["*** Add File: trailing.txt", `+${hashLine("hello")}`, `+${hashLine("")}`].join("\n"));
+    expect(detailsDiff(result).split("\n").slice(-2)).toEqual(["+hello", "+"]);
+  });
+
+  it("rejects duplicate resolved Add File targets before creating an aliased file", async () => {
+    const dir = await makeTempDir();
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: a.txt",
+      "+first",
+      "*** Add File: ./a.txt",
+      "+second",
+      "*** End Patch"
+    ].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
+    await expect(stat(join(dir, "a.txt"))).rejects.toThrow();
+  });
+
+  it("rejects duplicate resolved Update File targets before modifying an aliased file", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "a.txt"), "old");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@ @@",
+      row("-", "old"),
+      row("+", "first"),
+      "*** Update File: ./a.txt",
+      "@@ @@",
+      row("-", "old"),
+      row("+", "second"),
+      "*** End Patch"
+    ].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
+    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("old");
+  });
+
+  it("rejects duplicate resolved Delete File targets before deleting an aliased file", async () => {
+    const dir = await makeTempDir();
+    const target = join(dir, "doomed.txt");
+    await writeFile(target, "bye");
+    const patch = [
+      "*** Begin Patch",
+      "*** Delete File: doomed.txt",
+      "@@ @@",
+      row("-", "bye"),
+      "*** Delete File: ./doomed.txt",
+      "@@ @@",
+      row("-", "bye"),
+      "*** End Patch"
+    ].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
+    await expect(readFile(target, "utf8")).resolves.toBe("bye");
+  });
+
   it("validates all files before writing multi-file patches", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "one.txt"), "old");
@@ -106,6 +186,22 @@ describe("patch visible receipt", () => {
 
     await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
     await expect(readFile(join(dir, "one.txt"), "utf8")).resolves.toBe("old");
+  });
+
+  it("validates later delete targets before writing earlier additions", async () => {
+    const dir = await makeTempDir();
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: created.txt",
+      "+new",
+      "*** Delete File: missing.txt",
+      "@@ @@",
+      row("-", "gone"),
+      "*** End Patch"
+    ].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_FILE_TEXT]");
+    await expect(stat(join(dir, "created.txt"))).rejects.toThrow();
   });
 
   it("applies a multi-file patch transaction", async () => {
