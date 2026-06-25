@@ -57,7 +57,7 @@ Preferred syntax is Codex-like universal patch text:
 
 Update hunks are located by exact contiguous sequence of context/deletion hashes. Exactly one match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
-Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Full content diff is not shown in visible output; host/UI can read `details.diff`.
+Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Full content diff is not shown in model-visible output; it stays in `details.diff`. In Pi TUI, the `patch` result renderer uses `details.diff` for the human view: collapsed output shows a compact colorized diff preview, and expanded output shows a much larger diff window.
 
 ```text
 *** Add File: new.txt

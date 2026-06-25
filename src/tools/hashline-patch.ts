@@ -1,4 +1,5 @@
 import { defineTool, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
 import { renderUnifiedContentDiffs, type FileContentDiffInput } from "../content-diff.js";
@@ -17,6 +18,7 @@ import { hashLine } from "../hash.js";
 import { countRenderedLines, getVisibleOutputOverflow, type VisibleOutputOverflow } from "../output-size.js";
 import { parseText, serializeText } from "../text-lines.js";
 import { parsePatchInput, type AddFileOperation, type UniversalPatchOperation } from "../universal-patch-format.js";
+import { buildPatchResultRenderText, getPatchResultText } from "./patch-render.js";
 
 interface PatchReceiptDecision {
   text: string;
@@ -114,6 +116,21 @@ export const patchTool = defineTool({
         }
       };
     });
+  },
+  renderResult(result, { expanded, isPartial }, theme, context) {
+    const resultText = getPatchResultText(result);
+    return new Text(
+      buildPatchResultRenderText({
+        resultText,
+        details: result.details,
+        expanded,
+        isPartial,
+        isError: context.isError || resultText?.startsWith("Error") === true,
+        theme
+      }),
+      0,
+      0
+    );
   }
 });
 
