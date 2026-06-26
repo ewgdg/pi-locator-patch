@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import piHashlinePatch from "../src/index.js";
+import piLocatorPatch from "../src/index.js";
 
 describe("extension registration", () => {
   it("registers read/patch only and activates them while hiding write/edit", () => {
     const registeredTools: string[] = [];
     let sessionStart: (() => void) | undefined;
-    let activeTools = ["read", "edit", "write", "hashline_read", "hashline_patch"];
+    let activeTools = ["read", "edit", "write", "locator_read", "locator_patch"];
 
-    piHashlinePatch({
+    piLocatorPatch({
       registerTool(tool: { name: string }) {
         registeredTools.push(tool.name);
       },
@@ -32,7 +32,7 @@ describe("extension registration", () => {
     expect(activeTools).toContain("patch");
     expect(activeTools).not.toContain("write");
     expect(activeTools).not.toContain("edit");
-    expect(activeTools).not.toContain("hashline_read");
-    expect(activeTools).not.toContain("hashline_patch");
+    expect(activeTools).not.toContain("locator_read");
+    expect(activeTools).not.toContain("locator_patch");
   });
 });

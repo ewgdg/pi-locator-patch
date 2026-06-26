@@ -1,10 +1,10 @@
 {
-  "name": "pi-hashline-patch",
+  "name": "pi-locator-patch",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Pi extension for stable hashline reads and hash/text locator patch application.",
-  "keywords": ["pi-package", "hashline", "patch"],
+  "description": "Pi extension for explicit locator reads and patch application.",
+  "keywords": ["pi-package", "locator", "patch"],
   "scripts": {
     "check": "tsc --noEmit",
     "typecheck": "tsc --noEmit",

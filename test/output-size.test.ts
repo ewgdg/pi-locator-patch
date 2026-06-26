@@ -8,10 +8,10 @@ import {
   LLM_VISIBLE_OUTPUT_MAX_BYTES,
   LLM_VISIBLE_OUTPUT_MAX_LINES
 } from "../src/output-size.js";
-import { patchTool } from "../src/tools/hashline-patch.js";
-import { readTool } from "../src/tools/hashline-read.js";
+import { patchTool } from "../src/tools/locator-patch.js";
+import { readTool } from "../src/tools/locator-read.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
+const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;
 const oversizedContent = () => "x".repeat(LLM_VISIBLE_OUTPUT_MAX_BYTES + 1);

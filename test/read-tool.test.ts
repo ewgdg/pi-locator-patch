@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hashLine } from "../src/api.js";
-import { readTool } from "../src/tools/hashline-read.js";
+import { readTool } from "../src/tools/locator-read.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
+const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lJ3rZQAAAABJRU5ErkJggg==",
   "base64"

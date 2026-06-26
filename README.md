@@ -1,10 +1,10 @@
-# pi-hashline-patch
+# pi-locator-patch
 
 Pi extension package for plain/optional-hash reads and universal hash/text locator patch apply.
 
 When loaded, extension overrides Pi's built-in `read`, disables built-in `edit` and `write`, and enables only `read` / `patch` for file reads and writes. `patch` can add files, so built-in `write` is hidden.
 
-## Optional stable hashlines
+## Optional stable hash locators
 
 Text `read` output is plain content by default. Pass `includeHashes: true` when hash locators are useful. Eligible lines are prefixed as `HASH│content`; short or low-entropy lines stay plain even in hash mode.
 
@@ -35,7 +35,7 @@ Ab3│content with 3-char hash
 Ab3_│content with 4-char hash
 ```
 
-No line numbers, duplicate counters, or metadata rows are added. Image files (`jpg`, `png`, `gif`, `webp`) delegate to Pi's built-in `read` behavior and are returned as image reads, not hashlines.
+No line numbers, duplicate counters, or metadata rows are added. Image files (`jpg`, `png`, `gif`, `webp`) delegate to Pi's built-in `read` behavior and are returned as image reads, not transformed into hash-prefixed text rows.
 
 ### `patch`
 

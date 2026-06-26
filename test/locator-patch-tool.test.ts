@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hashLine, parseText } from "../src/api.js";
-import { patchTool } from "../src/tools/hashline-patch.js";
+import { patchTool } from "../src/tools/locator-patch.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
+const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
@@ -140,7 +140,7 @@ describe("patch visible receipt", () => {
 
     const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
-    expect(resultText(result)).toContain("Warning: 2 insert lines in literal.txt look like a hashline.");
+    expect(resultText(result)).toContain("Warning: 2 insert lines in literal.txt look like a locator.");
     expect(resultText(result)).toContain("Do not include hashes in `+` lines unless those hash characters are intended file content.");
     await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(`${literal}\n${shortHashLiteral}`);
   });

@@ -1,6 +1,6 @@
-# Hashline patch format
+# Locator patch format
 
-## Hashlines
+## Optional hash locators
 
 Text reads are plain by default. Pass `includeHashes: true` to render eligible logical text lines as:
 
@@ -57,7 +57,7 @@ Patch must start with `*** Begin Patch` and end with `*** End Patch`. One operat
 
 ## Update File
 
-Update sections use hashline hunks:
+Update sections use locator hunks:
 
 ```diff
 @@

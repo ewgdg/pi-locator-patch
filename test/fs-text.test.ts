@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileTextError, hashLine, readExistingTextFile, writeTextFileAtomically } from "../src/api.js";
-import { patchTool } from "../src/tools/hashline-patch.js";
+import { patchTool } from "../src/tools/locator-patch.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
+const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
 describe("text file IO", () => {

@@ -56,7 +56,7 @@ interface DryRunFileState {
 
 export const patchTool = defineTool({
   name: "patch",
-  label: "Hashline Patch",
+  label: "Locator Patch",
   description: "Token-efficient tool for editing files with multi-file-capable add/update/delete patches.",
   promptSnippet: "Prefer for normal token-efficient file edits; supports multi-file changes in one patch call.",
   promptGuidelines: [
@@ -280,7 +280,7 @@ function updateDryRunFileState(virtualFiles: Map<string, DryRunFileState>, chang
 }
 
 async function writeRetryPatch(operations: readonly UniversalPatchOperation[]): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
+  const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
   await writeRawFile(retryPatchPath, serializeUniversalPatch(operations), { encoding: "utf8", mode: 0o600, flag: "wx" });
   return retryPatchPath;
@@ -465,7 +465,7 @@ function buildInsertWarnings(operation: UniversalPatchOperation): string[] {
   const plural = suspiciousCount === 1 ? "" : "s";
   const verb = suspiciousCount === 1 ? "looks" : "look";
   return [
-    `Warning: ${suspiciousCount} insert line${plural} in ${operation.path} ${verb} like a hashline. ` +
+    `Warning: ${suspiciousCount} insert line${plural} in ${operation.path} ${verb} like a locator. ` +
       "Insert lines are literal content. Do not include hashes in `+` lines unless those hash characters are intended file content."
   ];
 }
