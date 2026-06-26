@@ -65,7 +65,7 @@ Preferred syntax is Codex-like universal patch text:
 *** End Patch
 ```
 
-Update hunks are located by exact context/delete locators. Context/delete operations accept hash-only (` HHHH`, `-HHHH`), hash+text (` HHHH│text`, `-HHHH│text`), or text-only (` │text`, `-│text`) forms using Unicode `│`; ASCII `|` is not special. Hash+text requires both hash and exact text to match. ` ...` preserves a skipped context range between surrounding context operations; `-...` deletes that range; insert operations contain literal new content (`+new text`). Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+Update hunks are located by exact context/delete locators. After a context/delete prefix, the locator is hash-only (` HHHH`, `-HHHH`), hash+exact-text (` HHHH│text`, `-HHHH│text`), or exact-text (` │text`, `-│text`). Locator text is always introduced by Unicode `│`; bare context/delete text is invalid (` │.selector`, not ` .selector`). ASCII `|` is not special. Hash+text requires both hash and exact text to match. ` ...` preserves a skipped context range between surrounding context operations; `-...` deletes that range. Insert operations contain literal new content directly after `+` (`+new text`) and do not use the locator marker. Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
 Success output is compact and model-visible: file operation headers plus hash-only receipt/status. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
 

@@ -80,7 +80,7 @@ Rules:
 - Hunk header must be exactly `@@`.
 - No source line numbers, duplicate counters, perfect hashes, or fuzzy anchors.
 - Operation prefixes: space = context, `-` = delete, `+` = insert.
-- Context/delete operations accept hash-only (` HHHH`, `-HHHH`), hash+text (` HHHH│text`, `-HHHH│text`), or text-only (` │text`, `-│text`) locators using Unicode `│`; ASCII `|` is not special. Hash+text requires both hash and exact text to match. Insert operations contain literal content after `+`.
+- Context/delete operations use locators after the operation prefix: hash-only (` HHHH`, `-HHHH`), hash+exact-text (` HHHH│text`, `-HHHH│text`), or exact-text (` │text`, `-│text`). Locator text is always introduced by Unicode `│`; bare context/delete text is invalid (` │.selector`, not ` .selector`). ASCII `|` is not special. Hash+text requires both hash and exact text to match. Insert operations contain literal content directly after `+` (`+new text`) and do not use the locator marker.
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
 - Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
