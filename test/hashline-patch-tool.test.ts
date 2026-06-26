@@ -135,13 +135,14 @@ describe("patch visible receipt", () => {
   it("allows hashline-looking inserted content and warns that insert lines are literal", async () => {
     const dir = await makeTempDir();
     const literal = `${hashLine("not the line")}│literal content`;
-    const patch = ["*** Begin Patch", "*** Add File: literal.txt", `+${literal}`, "*** End Patch"].join("\n");
+    const shortHashLiteral = `${hashLine("another line").slice(0, 3)}│short hash literal`;
+    const patch = ["*** Begin Patch", "*** Add File: literal.txt", `+${literal}`, `+${shortHashLiteral}`, "*** End Patch"].join("\n");
 
     const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
-    expect(resultText(result)).toContain("Warning: 1 insert line in literal.txt looks like a hashline.");
+    expect(resultText(result)).toContain("Warning: 2 insert lines in literal.txt look like a hashline.");
     expect(resultText(result)).toContain("Do not include hashes in `+` lines unless those hash characters are intended file content.");
-    await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(literal);
+    await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(`${literal}\n${shortHashLiteral}`);
   });
 
   it("rejects Add File when target already exists", async () => {

@@ -248,7 +248,7 @@ interface CurrentLineEntry {
 }
 
 function lineMatchesOp(line: CurrentLineEntry, op: MatchPatchOp): boolean {
-  return hasMatchLocator(op) && (op.hash === undefined || op.hash === line.hash) && (op.content === undefined || op.content === line.content);
+  return hasMatchLocator(op) && (op.hash === undefined || op.hash === line.hash.slice(0, op.hash.length)) && (op.content === undefined || op.content === line.content);
 }
 
 function hasMatchLocator(op: MatchPatchOp): boolean {
@@ -317,7 +317,7 @@ function validateHunkAnchorHint(hunk: Hunk, hunkIndex: number): void {
 function validateNoHashTextLocators(hunk: Hunk, hunkIndex: number): void {
   for (const op of hunk.ops) {
     if (isMatchOp(op) && op.hash !== undefined && op.content !== undefined) {
-      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only ( #HASH/-#HASH) or text-only ( :text/-:text).`);
+      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only ( #HASH/-#HASH, 3 or 4 chars) or text-only ( :text/-:text).`);
     }
   }
 }

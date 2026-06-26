@@ -19,7 +19,7 @@ describe("applyPatchToText", () => {
       patch(row(" ", "a"), row("-", "old"), row("+", "new"), row(" ", "z"))
     );
     expect(result.text).toBe("a\nnew\nz\n");
-    expect(result.renderedHashLines).toContain(`${hashLine("new")}│new`);
+    expect(result.renderedHashLines).toContain("new");
     expect(result.renderedReceipt).toBe(
       ["@@ result", ` ${hashLine("a")}`, `+${hashLine("new")}`, ` ${hashLine("z")}`].join("\n")
     );
@@ -34,6 +34,12 @@ describe("applyPatchToText", () => {
 
     const insertResult = applyPatchToText("start\nend", patch(row(" ", "start"), row("+", "middle"), row(" ", "end")));
     expect(insertResult.text).toBe("start\nmiddle\nend");
+  });
+
+  it("matches 3-character hash locator prefixes", () => {
+    const result = applyPatchToText("alpha target\nold value", patch(` #${hashLine("alpha target").slice(0, 3)}`, `-#${hashLine("old value").slice(0, 3)}`, "+new value"));
+
+    expect(result.text).toBe("alpha target\nnew value");
   });
 
   it("matches context/delete locators by hash-only and text-only forms", () => {

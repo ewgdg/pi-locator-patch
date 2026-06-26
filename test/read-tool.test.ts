@@ -20,14 +20,27 @@ const firstText = (result: Awaited<ReturnType<typeof readTool.execute>>) => {
 };
 
 describe("read tool", () => {
-  it("is agent-visible as read and returns HASH│content for text files", async () => {
+  it("is agent-visible as read and returns plain content for text files by default", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "file.txt"), "alpha\nbeta\n");
 
     const result = await readTool.execute("tool-call", { path: "file.txt" }, undefined, undefined, { cwd: dir } as never);
 
     expect(readTool.name).toBe("read");
-    expect(firstText(result)).toBe(`${hashLine("alpha")}│alpha\n${hashLine("beta")}│beta`);
+    expect(firstText(result)).toBe("alpha\nbeta");
+  });
+
+  it("returns variable HASH│content rows when includeHashes is true", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "file.txt"), "short\nconst enabled = true;\nfunction parsePatchOp(line: string): PatchOp {\n");
+
+    const result = await readTool.execute("tool-call", { path: "file.txt", includeHashes: true }, undefined, undefined, { cwd: dir } as never);
+
+    expect(firstText(result)).toBe([
+      "short",
+      `${hashLine("const enabled = true;").slice(0, 3)}│const enabled = true;`,
+      `${hashLine("function parsePatchOp(line: string): PatchOp {")}│function parsePatchOp(line: string): PatchOp {`
+    ].join("\n"));
   });
 
   it("delegates supported images to Pi's built-in read behavior", async () => {

@@ -2,13 +2,13 @@
 
 ## Hashlines
 
-Each logical text line renders as:
+Text reads are plain by default. Pass `includeHashes: true` to render eligible logical text lines as:
 
 ```text
 HASH│content
 ```
 
-`HASH` is first 3 bytes of SHA-256 over line content encoded as unpadded base64url, exactly 4 characters. Line terminators are excluded. Duplicate content produces same hash.
+Short or low-entropy lines may remain plain even with `includeHashes: true`: `trim().length < 8` or entropy `< 10` shows no hash, entropy `< 20` shows 3 chars, otherwise 4. `HASH` is the first 3 or 4 characters of the SHA-256 based full line hash. Line terminators are excluded. Duplicate content produces same full hash and same visible prefix.
 
 Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline convention (`LF`, `CRLF`, or `CR`) and final-newline state are preserved on update write. Empty file has zero logical lines.
 
@@ -80,7 +80,7 @@ Rules:
 
 - Hunk header must be `@@`, `@@ @<line>`, or `@@ @<start>...<end>`. `@@ @<line>` starts searching at 1-based line `<line>` and requires the resolved match start to be at or after that line. `@@ @<start>...<end>` requires the resolved match span to stay within inclusive 1-based lines `<start>...<end>`.
 - No source/destination diff ranges, duplicate counters, perfect hashes, or fuzzy anchors.
-- Operations use one operation char plus a selector: ` :<text>` = exact context text, `-:<text>` = exact delete text, `+<text>` = literal insertion, ` #<hash>` = hash context, `-#<hash>` = hash delete, ` ...` = skipped context range, `-...` = delete range.
+- Operations use one operation char plus a selector: ` :<text>` = exact context text, `-:<text>` = exact delete text, `+<text>` = literal insertion, ` #<hash>` = hash context, `-#<hash>` = hash delete (3 or 4 base64url characters), ` ...` = skipped context range, `-...` = delete range.
 - Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
@@ -119,7 +119,7 @@ Update receipt lines include only:
 - ` HHHH` for context lines that survived in current file.
 - `+HHHH` for newly inserted lines.
 
-Receipt rows are status output, not patch input syntax. Use ` #HHHH` for hash context and `-#HHHH` for hash delete in patch input.
+Receipt rows are status output, not patch input syntax. Use ` #HHH`/` #HHHH` for hash context and `-#HHH`/`-#HHHH` for hash delete in patch input.
 
 Deleted hashes are omitted from visible output. If receipt has no surviving context or inserted hashes, or exceeds visible output caps, patch still writes after valid apply and returns compact status.
 
@@ -129,4 +129,4 @@ Tool result details include `details.diff`: a human patch transcript for host/UI
 
 ## Collision risk
 
-4-character hashes expose 24 bits. Collisions are accepted behavior. Hash-only locators match by hash only. Use text-only locators when exact content is needed. Context lines in receipt preserve actual target hashes after apply.
+Visible hash locators expose 18 bits at 3 characters or 24 bits at 4 characters. Collisions are accepted behavior. Hash-only locators match by hash prefix only. Use text-only locators when exact content is needed. Context lines in receipt preserve actual target hashes after apply.

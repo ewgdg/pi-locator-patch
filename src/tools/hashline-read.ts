@@ -13,18 +13,19 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 export const readTool = defineTool({
   name: "read",
   label: "Hashline Read",
-  description: "Read a UTF-8 text file as stable HASH│content lines; image files use Pi's built-in read behavior.",
-  promptSnippet: "read returns text files as stable 4-character HASH│content rows for hash/text locator patching; images are returned by the built-in image reader.",
+  description: "Read a UTF-8 text file as plain content lines by default; pass includeHashes for stable HASH│content lines. Image files use Pi's built-in read behavior.",
+  promptSnippet: "read returns text files as plain content lines by default. Pass includeHashes: true to prepend variable 3/4-character HASH│ prefixes for hash/text locator patching; images are returned by the built-in image reader.",
   promptGuidelines: [
-    "Use read before patch only when you do not already know the needed current hashes.",
-    "For text files, read output has no line numbers, duplicate counters, or fuzzy anchors.",
+    "Use includeHashes: true only when you need hash locators; default text reads are plain content lines.",
+    "For text files, read output has no line numbers, duplicate counters, or fuzzy anchors. includeHashes may leave short/low-entropy lines plain.",
     "For image files, read delegates to Pi's built-in image handling instead of returning hashlines."
   ],
   parameters: Type.Object(
     {
-      path: Type.String({ description: "Text file path to read as hashlines." }),
+      path: Type.String({ description: "Text file path to read." }),
       offset: Type.Optional(Type.Integer({ minimum: 1, description: "1-based logical line offset." })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_LIMIT, description: "Max logical lines to return." }))
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_LIMIT, description: "Max logical lines to return." })),
+      includeHashes: Type.Optional(Type.Boolean({ description: "Prepend variable-length stable hashes to eligible text lines." }))
     },
     { additionalProperties: false }
   ),
@@ -43,7 +44,8 @@ export const readTool = defineTool({
         onUpdate: typeof _onUpdate,
         context: typeof ctx
       ) => ReturnType<typeof builtinRead.execute>;
-      return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
+      const { includeHashes: _includeHashes, ...builtinParams } = params;
+      return executeBuiltinRead(_toolCallId, builtinParams, signal, _onUpdate, ctx);
     }
 
     const offset = params.offset ?? 1;
@@ -51,18 +53,19 @@ export const readTool = defineTool({
     const { path, text } = await readExistingTextFile(absolutePath);
     const model = parseText(text);
     const selected = model.lines.slice(offset - 1, offset - 1 + limit);
-    const entries = toHashLines(selected);
-    const renderedHashLines = renderHashLines(entries);
-    assertHashlineOutputFits("read", renderedHashLines, entries.length);
+    const includeHashes = params.includeHashes ?? false;
+    const entries = includeHashes ? toHashLines(selected) : [];
+    const renderedText = includeHashes ? renderHashLines(entries) : selected.join("\n");
+    assertHashlineOutputFits("read", renderedText, selected.length);
 
     return {
-      content: [{ type: "text", text: renderedHashLines }],
+      content: [{ type: "text", text: renderedText }],
       details: {
         path,
         offset,
         limit,
         lineCount: model.lines.length,
-        returnedLineCount: entries.length,
+        returnedLineCount: selected.length,
         hasMore: offset - 1 + limit < model.lines.length
       }
     };

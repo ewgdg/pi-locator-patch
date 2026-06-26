@@ -1,4 +1,4 @@
-import { HASH_SEPARATOR, type HashFunction, hashLine, isHash } from "./hash.js";
+import { HASH_SEPARATOR, type HashFunction, hashLine, hashLengthForLine, isHash } from "./hash.js";
 import { InvalidPatchError } from "./errors.js";
 
 export interface HashLineEntry {
@@ -11,7 +11,12 @@ export function toHashLines(lines: string[], hashFn: HashFunction = hashLine): H
 }
 
 export function renderHashLines(entries: readonly HashLineEntry[]): string {
-  return entries.map(({ hash, content }) => `${hash}${HASH_SEPARATOR}${content}`).join("\n");
+  return entries
+    .map(({ hash, content }) => {
+      const width = hashLengthForLine(content);
+      return width === 0 ? content : `${hash.slice(0, width)}${HASH_SEPARATOR}${content}`;
+    })
+    .join("\n");
 }
 
 export function parseHashLine(text: string): HashLineEntry {
@@ -22,7 +27,7 @@ export function parseHashLine(text: string): HashLineEntry {
 
   const hash = text.slice(0, separatorIndex);
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed hashline: invalid 4-character base64url hash '${hash}'.`);
+    throw new InvalidPatchError(`Malformed hashline: invalid 3- or 4-character base64url hash '${hash}'.`);
   }
 
   return { hash, content: text.slice(separatorIndex + HASH_SEPARATOR.length) };

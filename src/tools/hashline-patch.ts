@@ -70,7 +70,7 @@ export const patchTool = defineTool({
       patch: Type.Optional(
         Type.String({
           description:
-            "Inline patch text. Mutually exclusive with `patch_file`. Must start with `*** Begin Patch` and end with `*** End Patch`. May contain multiple `*** Add File`, `*** Update File`, and `*** Delete File` sections; `*** Update File` sections may contain multiple `@@` hunks. Update hunk headers are `@@`, `@@ @<line>`, or `@@ @<start>...<end>`; `@@ @<line>` starts searching at 1-based line `<line>` and requires the resolved match start to be at or after that line, while `@@ @<start>...<end>` requires the resolved match span to stay within inclusive 1-based lines `<start>...<end>`. Update hunk operations use one operation character plus a selector: ` :<text>` exact context text, `-:<text>` exact delete text, `+<text>` insert literal text, ` #<hash>` hash context, `-#<hash>` hash delete, ` ...` context range, and `-...` delete range. Prefix selectors (`^<prefix>`) are not supported yet. Do not use read-output `HASH│content` rows as patch operations. Insert lines use raw `+{text}` content; do not include hashes in `+` lines unless those hash characters are intended file content. Example:\n```\n*** Begin Patch\n*** Update File: path/to/file.txt\n@@ @120...140\n :start context\n ...\n #ABCD\n-...\n+replacement text\n :end context\n*** End Patch\n```"
+            "Inline patch text. Mutually exclusive with `patch_file`. Must start with `*** Begin Patch` and end with `*** End Patch`. May contain multiple `*** Add File`, `*** Update File`, and `*** Delete File` sections; `*** Update File` sections may contain multiple `@@` hunks. Update hunk headers are `@@`, `@@ @<line>`, or `@@ @<start>...<end>`; `@@ @<line>` starts searching at 1-based line `<line>` and requires the resolved match start to be at or after that line, while `@@ @<start>...<end>` requires the resolved match span to stay within inclusive 1-based lines `<start>...<end>`. Update hunk operations use one operation character plus a selector: ` :<text>` exact context text, `-:<text>` exact delete text, `+<text>` insert literal text, ` #<hash>` 3/4-char hash context, `-#<hash>` 3/4-char hash delete, ` ...` context range, and `-...` delete range. Prefix selectors (`^<prefix>`) are not supported yet. Do not use read-output `HASH│content` rows as patch operations. Insert lines use raw `+{text}` content; do not include hashes in `+` lines unless those hash characters are intended file content. Example:\n```\n*** Begin Patch\n*** Update File: path/to/file.txt\n@@ @120...140\n :start context\n ...\n #ABC\n-...\n+replacement text\n :end context\n*** End Patch\n```"
         })
       ),
       patch_file: Type.Optional(
@@ -479,7 +479,9 @@ function countHashlikeInsertLines(operation: UniversalPatchOperation): number {
 }
 
 function looksLikeHashline(value: string): boolean {
-  return value.length > 4 && isHash(value.slice(0, 4)) && value[4] === HASH_SEPARATOR;
+  const separatorIndex = value.indexOf(HASH_SEPARATOR);
+  if (separatorIndex < 0) return false;
+  return isHash(value.slice(0, separatorIndex));
 }
 
 function renderPatchWarnings(plannedChanges: readonly PlannedFileChange[]): string {

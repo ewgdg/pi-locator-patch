@@ -19,10 +19,10 @@ describe("patch parser", () => {
     }
   });
 
-  it("accepts hash context/delete hunks with dedicated hash prefixes", () => {
-    const patch = parsePatch(["@@", row(" ", "ctx"), row("-", "old"), row("+", "new")].join("\n"));
+  it("accepts 3- and 4-character hash context/delete hunks with dedicated hash prefixes", () => {
+    const patch = parsePatch(["@@", ` #${hashLine("ctx").slice(0, 3)}`, row("-", "old"), row("+", "new")].join("\n"));
     expect(patch.hunks[0].ops).toMatchObject([
-      { kind: "context", hash: hashLine("ctx") },
+      { kind: "context", hash: hashLine("ctx").slice(0, 3) },
       { kind: "delete", hash: hashLine("old") },
       { kind: "insert", content: "new" }
     ]);
@@ -90,7 +90,8 @@ describe("patch parser", () => {
   });
 
   it("rejects bad dedicated hash operations", () => {
-    expect(() => parsePatch("@@\n #abc")).toThrow("[E_INVALID_PATCH]");
+    expect(() => parsePatch("@@\n #ab")).toThrow("[E_INVALID_PATCH]");
+    expect(() => parsePatch("@@\n #abcde")).toThrow("[E_INVALID_PATCH]");
     expect(() => parsePatch("@@\n-#a*c!")).toThrow("[E_INVALID_PATCH]");
     expect(() => parsePatch(`@@\n #${hashLine("ctx")}│ctx`)).toThrow("[E_INVALID_PATCH]");
   });

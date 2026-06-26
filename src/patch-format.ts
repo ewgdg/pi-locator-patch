@@ -149,7 +149,7 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
 
 function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be exactly 4 base64url characters after '${kind === "context" ? " #" : "-#"}'.`);
+    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be 3 or 4 base64url characters after '${kind === "context" ? " #" : "-#"}'.`);
   }
   return { kind, hash };
 }

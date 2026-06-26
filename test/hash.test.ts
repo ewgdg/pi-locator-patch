@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HASH_WIDTH, hashLine } from "../src/api.js";
+import { HASH_WIDTH, entropy, hashLengthForLine, hashLine } from "../src/api.js";
 
 describe("hashLine", () => {
   it("returns stable pure 4-character base64url hashes", () => {
@@ -17,5 +17,14 @@ describe("hashLine", () => {
 
   it("supports unicode content", () => {
     expect(hashLine("雪│line🙂")).toMatch(/^[A-Za-z0-9_-]{4}$/);
+  });
+
+  it("chooses visible hash lengths from trimmed length and entropy", () => {
+    expect(hashLengthForLine("short")).toBe(0);
+    expect(hashLengthForLine("        }")).toBe(0);
+    expect(hashLengthForLine("aaaaaaaaaaaaaaaa")).toBe(0);
+    expect(hashLengthForLine("const enabled = true;")).toBe(3);
+    expect(hashLengthForLine("function parsePatchOp(line: string): PatchOp {")).toBe(4);
+    expect(entropy(" alpha ")).toBe(entropy("alpha"));
   });
 });
