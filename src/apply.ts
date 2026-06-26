@@ -256,16 +256,20 @@ function hunkHasSparseRange(hunk: Hunk): boolean {
 function buildMatchPattern(hunk: Hunk): string[] {
   return hunk.ops.flatMap((op) => {
     if (op.kind === "insert") return [];
-    if (op.kind === "range") return [`${op.rangeKind === "context" ? " " : "-"}...`];
+    if (op.kind === "range") return [renderRangeLocator(op.rangeKind)];
     return [renderMatchLocator(op)];
   });
+}
+
+function renderRangeLocator(rangeKind: "context" | "delete"): string {
+  return `${rangeKind === "context" ? " " : "-"}...`;
 }
 
 function renderMatchLocator(op: MatchPatchOp): string {
   if (!hasMatchLocator(op)) return "<missing locator>";
   if (op.hash !== undefined && op.content !== undefined) return "<invalid hash+text locator>";
-  if (op.hash !== undefined) return `${op.kind === "context" ? "=" : "~"}${op.hash}`;
-  return `${op.kind === "context" ? " " : "-"}${op.content ?? ""}`;
+  if (op.hash !== undefined) return `${op.kind === "context" ? " #" : "-#"}${op.hash}`;
+  return `${op.kind === "context" ? " :" : "-:"}${op.content ?? ""}`;
 }
 
 function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
@@ -274,7 +278,7 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
     const previousMatchOp = findNearestMatchOp(hunk.ops, opIndex, -1);
     const nextMatchOp = findNearestMatchOp(hunk.ops, opIndex, 1);
     if (previousMatchOp?.kind !== "context" || nextMatchOp?.kind !== "context") {
-      throw new UnsupportedHunkError(`Hunk ${hunkIndex} '${op.rangeKind === "delete" ? "-..." : " ..."}' must be between context operations.`);
+      throw new UnsupportedHunkError(`Hunk ${hunkIndex} '${renderRangeLocator(op.rangeKind)}' must be between context operations.`);
     }
   }
 }
@@ -282,7 +286,7 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
 function validateNoHashTextLocators(hunk: Hunk, hunkIndex: number): void {
   for (const op of hunk.ops) {
     if (isMatchOp(op) && op.hash !== undefined && op.content !== undefined) {
-      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only (=HASH/~HASH) or text-only ( <text>/-<text>).`);
+      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only ( #HASH/-#HASH) or text-only ( :text/-:text).`);
     }
   }
 }

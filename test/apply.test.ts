@@ -7,7 +7,7 @@ import {
   hashLine
 } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashFn(content)}`;
+const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashFn(content)}`;
 const patch = (...lines: string[]) => ["@@", ...lines].join("\n");
 
 describe("applyPatchToText", () => {
@@ -37,7 +37,7 @@ describe("applyPatchToText", () => {
   it("matches context/delete locators by hash-only and text-only forms", () => {
     const result = applyPatchToText(
       "a\nold\nz",
-      patch(row(" ", "a"), "-old", "+new", " z")
+      patch(row(" ", "a"), "-:old", "+new", " :z")
     );
 
     expect(result.text).toBe("a\nnew\nz");
@@ -48,15 +48,15 @@ describe("applyPatchToText", () => {
   });
 
   it("matches blank-line and separator-leading text locators", () => {
-    const blankResult = applyPatchToText("start\n\nend", patch(" start", "-", " end"));
+    const blankResult = applyPatchToText("start\n\nend", patch(" :start", "-:", " :end"));
     expect(blankResult.text).toBe("start\nend");
 
-    const separatorResult = applyPatchToText("start\n│old\nend", patch(" start", "-│old", "+new", " end"));
+    const separatorResult = applyPatchToText("start\n│old\nend", patch(" :start", "-:│old", "+new", " :end"));
     expect(separatorResult.text).toBe("start\nnew\nend");
   });
 
   it("uses text locators as sparse range anchors", () => {
-    const result = applyPatchToText("start\nremove\nend", patch(" start", "-...", " end"));
+    const result = applyPatchToText("start\nremove\nend", patch(" :start", "-...", " :end"));
 
     expect(result.text).toBe("start\nend");
   });

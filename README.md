@@ -8,7 +8,7 @@ When loaded, extension overrides Pi's built-in `read`, disables built-in `edit` 
 
 Stable hashlines are the main contract: a visible line hash is a pure function of the exact line content. It does not depend on file path, line number, neighboring lines, duplicate counters, file-local collision checks, or read range. The same line content gets the same visible hash across files, reads, and runs.
 
-This makes prior reads reusable. If an agent already knows the target line hash, it can patch with that hash later without doing a redundant read first. If it knows only the exact line text, it can use text operations such as ` <text>` or `-<text>`. `patch` still requires exactly one matching hunk span, so stale or ambiguous patches fail instead of falling back to fuzzy edits.
+This makes prior reads reusable. If an agent already knows the target line hash, it can patch with that hash later without doing a redundant read first. If it knows only the exact line text, it can use text selector operations such as ` :<text>` or `-:<text>`. `patch` still requires exactly one matching hunk span, so stale or ambiguous patches fail instead of falling back to fuzzy edits.
 
 ## Tools
 
@@ -54,26 +54,26 @@ Preferred syntax is Codex-like universal patch text:
 +literal new file line
 *** Update File: existing.txt
 @@
- exact context text
--text to delete
+ :exact context text
+-:text to delete
 +literal inserted line
 @@
- start context text
+ :start context text
  ...
 +literal insertion after skipped context
-=HHHH
+ #HHHH
 @@
-=HHHH
+ #HHHH
 -...
 +literal replacement line
- end context text
+ :end context text
 *** Delete File: old.txt
 *** End Patch
 ```
 
-Update hunks use distinct text and hash operations: ` <text>` for exact context text, `-<text>` for exact delete text, `+<text>` for literal insertion, `=<hash>` for hash context, and `~<hash>` for hash delete. ` ...` preserves a skipped context range between surrounding context operations; `-...` deletes that range. Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal new content directly after `+`; do not include hashes in `+` lines unless those hash characters are intended file content. Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+Update hunks use operation+selector syntax: ` :<text>` for exact context text, `-:<text>` for exact delete text, `+<text>` for literal insertion, ` #<hash>` for hash context, and `-#<hash>` for hash delete. ` ...` preserves a skipped context range between surrounding context operations; `-...` deletes that range. Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal new content directly after `+`; do not include hashes in `+` lines unless those hash characters are intended file content. Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
 
-Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Receipt rows like ` HHHH` and `+HHHH` are status output, not patch hash locator syntax; use `=HHHH` or `~HHHH` in patch input. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
+Success output is compact and model-visible: file operation headers plus hash-only receipt/status. Receipt rows like ` HHHH` and `+HHHH` are status output, not patch hash locator syntax; use ` #HHHH` or `-#HHHH` in patch input. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
 
 File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a retry patch file path containing the failed operation plus skipped later operations. `dry_run: true` validates the full patch without writing.
 

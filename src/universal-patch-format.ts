@@ -87,7 +87,7 @@ function serializeOperation(operation: UniversalPatchOperation): string[] {
 }
 
 function serializePatchOp(op: Patch["hunks"][number]["ops"][number]): string {
-  if (op.kind === "range") return `${textPatchOpPrefix(op.rangeKind)}...`;
+  if (op.kind === "range") return rangePatchOp(op.rangeKind);
   if (op.kind === "insert") return `+${op.content}`;
   if (op.hash !== undefined && op.content !== undefined) {
     throw new InvalidPatchError("Hash+text locators are not supported; serialize hash-only or text-only patch operations.");
@@ -96,12 +96,16 @@ function serializePatchOp(op: Patch["hunks"][number]["ops"][number]): string {
   return `${textPatchOpPrefix(op.kind)}${op.content ?? ""}`;
 }
 
+function rangePatchOp(kind: "context" | "delete"): string {
+  return `${kind === "context" ? " " : "-"}...`;
+}
+
 function textPatchOpPrefix(kind: "context" | "delete"): string {
-  return kind === "context" ? " " : "-";
+  return kind === "context" ? " :" : "-:";
 }
 
 function hashPatchOpPrefix(kind: "context" | "delete"): string {
-  return kind === "context" ? "=" : "~";
+  return kind === "context" ? " #" : "-#";
 }
 
 function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction): UniversalPatchOperation {

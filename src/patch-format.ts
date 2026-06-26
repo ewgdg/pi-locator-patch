@@ -85,36 +85,40 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
 }
 
 function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
-  if (line === " ...") {
-    return { kind: "range", rangeKind: "context" };
-  }
-  if (line === "-...") {
-    return { kind: "range", rangeKind: "delete" };
-  }
-
   if (line.startsWith("+")) {
     const content = line.slice(1);
     return { kind: "insert", hash: hashFn(content), content };
   }
-  if (line.startsWith("=")) {
-    return parseHashPatchOp("context", line.slice(1), line);
-  }
-  if (line.startsWith("~")) {
-    return parseHashPatchOp("delete", line.slice(1), line);
-  }
   if (line.startsWith(" ")) {
-    return { kind: "context", content: line.slice(1) };
+    return parseSelectorPatchOp("context", line.slice(1), line);
   }
   if (line.startsWith("-")) {
-    return { kind: "delete", content: line.slice(1) };
+    return parseSelectorPatchOp("delete", line.slice(1), line);
   }
 
-  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use ' <text>', '-<text>', '+<text>', '=<hash>', '~<hash>', ' ...', or '-...'.`);
+  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use ' :<text>', '-:<text>', '+<text>', ' #<hash>', '-#<hash>', ' ...', or '-...'. Prefix selectors (^<prefix>) are not supported yet.`);
+}
+
+function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: string): PatchOp {
+  if (selector === "...") {
+    return { kind: "range", rangeKind: kind };
+  }
+  if (selector.startsWith(":")) {
+    return { kind, content: selector.slice(1) };
+  }
+  if (selector.startsWith("#")) {
+    return parseHashPatchOp(kind, selector.slice(1), line);
+  }
+  if (selector.startsWith("^")) {
+    throw new InvalidPatchError(`Prefix selectors are not supported yet in operation '${line}'.`);
+  }
+
+  throw new InvalidPatchError(`Malformed ${kind} selector operation '${line}'. Use ${kind === "context" ? "' :<text>', ' #<hash>', or ' ...'" : "'-:<text>', '-#<hash>', or '-...'"}.`);
 }
 
 function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be exactly 4 base64url characters after '${kind === "context" ? "=" : "~"}'.`);
+    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be exactly 4 base64url characters after '${kind === "context" ? " #" : "-#"}'.`);
   }
   return { kind, hash };
 }

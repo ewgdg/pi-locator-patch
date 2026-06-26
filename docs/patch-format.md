@@ -22,19 +22,19 @@ Preferred `patch` input is Codex-like and carries file paths. The tool accepts e
 +literal new file line
 *** Update File: existing.txt
 @@
- exact context text
--text to delete
-=HHHH
+ :exact context text
+-:text to delete
+ #HHHH
 @@
- start context text
+ :start context text
  ...
 +literal insertion after skipped context
- end context text
+ :end context text
 @@
-=HHHH
+ #HHHH
 -...
 +literal replacement content
- end context text
+ :end context text
 *** Delete File: old.txt
 *** End Patch
 ```
@@ -61,26 +61,26 @@ Update sections use hashline hunks:
 
 ```diff
 @@
- exact context text
--text to delete
+ :exact context text
+-:text to delete
 +literal inserted content
 @@
- start context text
+ :start context text
  ...
 +literal insertion after skipped context
-=HHHH
+ #HHHH
 @@
-=HHHH
+ #HHHH
 -...
 +literal replacement content
- end context text
+ :end context text
 ```
 
 Rules:
 
 - Hunk header must be exactly `@@`.
 - No source line numbers, duplicate counters, perfect hashes, or fuzzy anchors.
-- Operations: ` <text>` = exact context text, `-<text>` = exact delete text, `+<text>` = literal insertion, `=<hash>` = hash context, `~<hash>` = hash delete.
+- Operations use one operation char plus a selector: ` :<text>` = exact context text, `-:<text>` = exact delete text, `+<text>` = literal insertion, ` #<hash>` = hash context, `-#<hash>` = hash delete, ` ...` = skipped context range, `-...` = delete range.
 - Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
@@ -119,7 +119,7 @@ Update receipt lines include only:
 - ` HHHH` for context lines that survived in current file.
 - `+HHHH` for newly inserted lines.
 
-Receipt rows are status output, not patch input syntax. Use `=HHHH` for hash context and `~HHHH` for hash delete in patch input.
+Receipt rows are status output, not patch input syntax. Use ` #HHHH` for hash context and `-#HHHH` for hash delete in patch input.
 
 Deleted hashes are omitted from visible output. If receipt has no surviving context or inserted hashes, or exceeds visible output caps, patch still writes after valid apply and returns compact status.
 

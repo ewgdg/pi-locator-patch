@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
 describe("universal patch parser", () => {
   it("accepts Codex-like add, update, and delete file sections", () => {
@@ -47,11 +47,11 @@ describe("universal patch parser", () => {
       "@@",
       row(" ", "ctx"),
       row("-", "old"),
-      " ctx",
+      " :ctx",
       " ...",
       row("+", "new"),
       "-...",
-      " after",
+      " :after",
       "*** Delete File: doomed.txt",
       "*** End Patch"
     ].join("\n");
@@ -59,8 +59,8 @@ describe("universal patch parser", () => {
     const serialized = serializeUniversalPatch(parseUniversalPatch(source).operations);
 
     expect(serialized).toBe(source);
-    expect(serialized).toContain(`=${hashLine("ctx")}`);
-    expect(serialized).toContain(`~${hashLine("old")}`);
+    expect(serialized).toContain(` #${hashLine("ctx")}`);
+    expect(serialized).toContain(`-#${hashLine("old")}`);
     expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update", "delete"]);
   });
 
