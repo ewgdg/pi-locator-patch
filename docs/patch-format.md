@@ -25,7 +25,7 @@ Preferred `patch` input is Codex-like and carries file paths. The tool accepts e
  :exact context text
 -:text to delete
  #HHHH
-@@
+@@ @120
  :start context text
  ...
 +literal insertion after skipped context
@@ -64,7 +64,7 @@ Update sections use hashline hunks:
  :exact context text
 -:text to delete
 +literal inserted content
-@@
+@@ @120
  :start context text
  ...
 +literal insertion after skipped context
@@ -78,15 +78,15 @@ Update sections use hashline hunks:
 
 Rules:
 
-- Hunk header must be exactly `@@`.
-- No source line numbers, duplicate counters, perfect hashes, or fuzzy anchors.
+- Hunk header must be `@@` or `@@ @<line>`. `@@ @<line>` is a hunk anchor hint: start searching at 1-based line `<line>`, and the resolved match start must be at or after that line.
+- No source/destination diff ranges, duplicate counters, perfect hashes, or fuzzy anchors.
 - Operations use one operation char plus a selector: ` :<text>` = exact context text, `-:<text>` = exact delete text, `+<text>` = literal insertion, ` #<hash>` = hash context, `-#<hash>` = hash delete, ` ...` = skipped context range, `-...` = delete range.
 - Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
 - Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
 - Zero matches = stale hunk. More than one match = ambiguous hunk.
-- Pure insertion has empty match sequence and is supported only when target file has zero logical lines.
+- Pure insertion has empty match sequence and is supported only when target file has zero logical lines; hunk anchor hints are rejected on pure insert hunks because there is no resolved match start.
 
 ## Delete File
 

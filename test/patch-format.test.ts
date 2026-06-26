@@ -4,6 +4,19 @@ import { hashLine, parsePatch } from "../src/api.js";
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
 describe("patch parser", () => {
+  it("accepts hunk anchor hints", () => {
+    const parsed = parsePatch(["@@ @12", " :ctx"].join("\n"));
+
+    expect(parsed.hunks[0]).toMatchObject({ anchorHint: { line: 12 } });
+    expect(parsed.hunks[0].ops).toMatchObject([{ kind: "context", content: "ctx" }]);
+  });
+
+  it("rejects malformed hunk anchor hints", () => {
+    for (const header of ["@@ @0", "@@ @-1", "@@ @abc", "@@ @12 extra", "@@ @ 12"]) {
+      expect(() => parsePatch([header, " :ctx"].join("\n"))).toThrow("[E_INVALID_PATCH]");
+    }
+  });
+
   it("accepts hash context/delete hunks with dedicated hash prefixes", () => {
     const patch = parsePatch(["@@", row(" ", "ctx"), row("-", "old"), row("+", "new")].join("\n"));
     expect(patch.hunks[0].ops).toMatchObject([

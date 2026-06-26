@@ -83,7 +83,15 @@ function serializeOperation(operation: UniversalPatchOperation): string[] {
   if (operation.kind === "delete") {
     return [`*** Delete File: ${operation.path}`];
   }
-  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => ["@@", ...hunk.ops.map(serializePatchOp)])];
+  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => [serializeHunkHeader(hunk), ...hunk.ops.map(serializePatchOp)])];
+}
+
+function serializeHunkHeader(hunk: Patch["hunks"][number]): string {
+  if (!hunk.anchorHint) return "@@";
+  if (!Number.isSafeInteger(hunk.anchorHint.line) || hunk.anchorHint.line < 1) {
+    throw new InvalidPatchError("Hunk anchor hint line must be a safe positive integer.");
+  }
+  return `@@ @${hunk.anchorHint.line}`;
 }
 
 function serializePatchOp(op: Patch["hunks"][number]["ops"][number]): string {

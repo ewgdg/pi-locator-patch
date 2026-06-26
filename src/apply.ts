@@ -110,10 +110,14 @@ function renderPatchReceiptLine(line: PatchReceiptLine): string {
 }
 
 function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {
+  validateHunkAnchorHint(hunk, hunkIndex);
   validateNoHashTextLocators(hunk, hunkIndex);
   const matchPattern = buildMatchPattern(hunk);
 
   if (matchPattern.length === 0) {
+    if (hunk.anchorHint) {
+      throw new UnsupportedHunkError(`Hunk ${hunkIndex} anchor hint requires at least one context/deletion locator.`);
+    }
     if (lines.length === 0 && hunk.ops.every((op) => op.kind === "insert")) {
       const insertedHashes = hunk.ops.map((op) => hashFn(op.content));
       return {
@@ -144,15 +148,16 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
 
   const currentEntries = lines.map((content) => ({ content, hash: hashFn(content) }));
   const matchOps = hunk.ops.filter(isMatchOp);
+  const searchStart = getAnchorSearchStart(hunk);
   const matches = hunkHasSparseRange(hunk)
-    ? findSparseMatches(currentEntries, hunk.ops, 2)
-    : findContiguousMatches(currentEntries, matchOps).map((start) => contiguousMatchToSparseMatch(hunk.ops, start));
+    ? findSparseMatches(currentEntries, hunk.ops, 2, searchStart)
+    : findContiguousMatches(currentEntries, matchOps, searchStart).map((start) => contiguousMatchToSparseMatch(hunk.ops, start));
   if (matches.length === 0) {
-    throw new StaleHunkError(`Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} was not found.`);
+    throw new StaleHunkError(`Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} was not found${renderAnchorSearchScope(hunk)}.`);
   }
   if (matches.length > 1) {
     throw new AmbiguousHunkError(
-      `Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} matched ${matches.length} spans.`
+      `Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`
     );
   }
 
@@ -253,6 +258,14 @@ function hunkHasSparseRange(hunk: Hunk): boolean {
   return hunk.ops.some((op) => op.kind === "range");
 }
 
+function getAnchorSearchStart(hunk: Hunk): number {
+  return hunk.anchorHint ? hunk.anchorHint.line - 1 : 0;
+}
+
+function renderAnchorSearchScope(hunk: Hunk): string {
+  return hunk.anchorHint ? ` at or after line ${hunk.anchorHint.line}` : "";
+}
+
 function buildMatchPattern(hunk: Hunk): string[] {
   return hunk.ops.flatMap((op) => {
     if (op.kind === "insert") return [];
@@ -283,6 +296,12 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
   }
 }
 
+function validateHunkAnchorHint(hunk: Hunk, hunkIndex: number): void {
+  if (hunk.anchorHint && (!Number.isSafeInteger(hunk.anchorHint.line) || hunk.anchorHint.line < 1)) {
+    throw new InvalidPatchError(`Hunk ${hunkIndex} anchor hint line must be a safe positive integer.`);
+  }
+}
+
 function validateNoHashTextLocators(hunk: Hunk, hunkIndex: number): void {
   for (const op of hunk.ops) {
     if (isMatchOp(op) && op.hash !== undefined && op.content !== undefined) {
@@ -310,9 +329,9 @@ function contiguousMatchToSparseMatch(ops: readonly Hunk["ops"][number][], start
   return { start, end: start + consumed, lineIndexes, ranges: new Map() };
 }
 
-function findSparseMatches(entries: CurrentLineEntry[], ops: readonly Hunk["ops"][number][], maxMatches: number): SparseMatch[] {
+function findSparseMatches(entries: CurrentLineEntry[], ops: readonly Hunk["ops"][number][], maxMatches: number, searchStart = 0): SparseMatch[] {
   const matches: SparseMatch[] = [];
-  for (let start = 0; start <= entries.length && matches.length < maxMatches; start += 1) {
+  for (let start = searchStart; start <= entries.length && matches.length < maxMatches; start += 1) {
     collectSparseMatches({ entries, ops, opIndex: 0, position: start, start, lineIndexes: new Map(), ranges: new Map(), matches, maxMatches });
   }
   return matches;
@@ -364,11 +383,12 @@ function renderSkippedContextRange(lineCount: number): string {
   return lineCount === 0 ? "..." : `... ${lineCount} skipped context line${lineCount === 1 ? "" : "s"}`;
 }
 
-function findContiguousMatches(entries: CurrentLineEntry[], sequence: readonly MatchPatchOp[]): number[] {
+function findContiguousMatches(entries: CurrentLineEntry[], sequence: readonly MatchPatchOp[], searchStart = 0): number[] {
   const matches: number[] = [];
-  for (let index = 0; index <= entries.length - sequence.length; index += 1) {
+  for (let index = searchStart; index <= entries.length - sequence.length; index += 1) {
     if (sequence.every((op, offset) => lineMatchesOp(entries[index + offset], op))) {
       matches.push(index);
+      if (matches.length >= 2) break;
     }
   }
   return matches;

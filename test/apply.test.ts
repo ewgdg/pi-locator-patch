@@ -9,6 +9,7 @@ import {
 
 const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashFn(content)}`;
 const patch = (...lines: string[]) => ["@@", ...lines].join("\n");
+const anchoredPatch = (line: number, ...lines: string[]) => [`@@ @${line}`, ...lines].join("\n");
 
 describe("applyPatchToText", () => {
   it("replaces one line with unique surrounding context", () => {
@@ -41,6 +42,32 @@ describe("applyPatchToText", () => {
     );
 
     expect(result.text).toBe("a\nnew\nz");
+  });
+
+  it("uses hunk anchor hints as lower-bound search starts for contiguous matches", () => {
+    const result = applyPatchToText("target\nx\ntarget", anchoredPatch(3, "-:target"));
+
+    expect(result.text).toBe("target\nx");
+    expect(result.hunkAudits[0].matchStart).toBe(2);
+  });
+
+  it("does not search before hunk anchor hints", () => {
+    expect(() => applyPatchToText("target\nx", anchoredPatch(2, "-:target"))).toThrow(/at or after line 2/);
+  });
+
+  it("uses hunk anchor hints as lower-bound search starts for sparse matches", () => {
+    const result = applyPatchToText("start\nold\nend\npad\nstart\nold\nend", anchoredPatch(5, " :start", "-...", " :end"));
+
+    expect(result.text).toBe("start\nold\nend\npad\nstart\nend");
+    expect(result.hunkAudits[0].matchStart).toBe(4);
+  });
+
+  it("reports ambiguity at or after hunk anchor hints", () => {
+    expect(() => applyPatchToText("x\nx\nx", anchoredPatch(2, "-:x"))).toThrow(/matched 2 spans at or after line 2/);
+  });
+
+  it("rejects hunk anchor hints on pure insert hunks", () => {
+    expect(() => applyPatchToText("", anchoredPatch(1, "+first"))).toThrow("anchor hint requires at least one context/deletion locator");
   });
 
   it("rejects API match ops containing both hash and text", () => {

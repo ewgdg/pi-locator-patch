@@ -24,7 +24,12 @@ export interface RangePatchOp {
   rangeKind: RangePatchOpKind;
 }
 
+export interface HunkAnchorHint {
+  line: number;
+}
+
 export interface Hunk {
+  anchorHint?: HunkAnchorHint;
   ops: PatchOp[];
 }
 
@@ -50,22 +55,17 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
     if (line.startsWith("--- ") || line.startsWith("+++ ")) {
       throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.");
     }
-    if (line.startsWith("@@") && line !== "@@") {
-      throw new InvalidPatchError("Hunk header must be exactly '@@' with no line numbers.");
-    }
-    if (line !== "@@") {
-      throw new InvalidPatchError(`Expected hunk header '@@', got '${line}'.`);
-    }
+    const anchorHint = parseHunkHeader(line);
     index += 1;
 
     const ops: PatchOp[] = [];
-    while (index < lines.length && lines[index] !== "@@") {
+    while (index < lines.length && !isHunkHeaderLine(lines[index])) {
       const opLine = lines[index];
       if (opLine.startsWith("--- ") || opLine.startsWith("+++ ")) {
         throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.");
       }
       if (opLine.startsWith("@@")) {
-        throw new InvalidPatchError("Hunk header must be exactly '@@' with no line numbers.");
+        parseHunkHeader(opLine);
       }
       ops.push(parsePatchOp(opLine, hashFn));
       index += 1;
@@ -74,7 +74,7 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
     if (ops.length === 0) {
       throw new InvalidPatchError("Hunk must contain at least one operation.");
     }
-    hunks.push({ ops });
+    hunks.push(anchorHint ? { anchorHint, ops } : { ops });
   }
 
   if (hunks.length === 0) {
@@ -82,6 +82,31 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
   }
 
   return { hunks };
+}
+
+const HUNK_HEADER_PATTERN = /^@@(?: @([1-9]\d*))?$/;
+
+function isHunkHeaderLine(line: string): boolean {
+  return HUNK_HEADER_PATTERN.test(line);
+}
+
+function parseHunkHeader(line: string): HunkAnchorHint | undefined {
+  const match = HUNK_HEADER_PATTERN.exec(line);
+  if (!match) {
+    if (line.startsWith("@@")) {
+      throw new InvalidPatchError("Hunk header must be '@@' or '@@ @<positive-line>'.");
+    }
+    throw new InvalidPatchError(`Expected hunk header '@@', got '${line}'.`);
+  }
+
+  const lineText = match[1];
+  if (lineText === undefined) return undefined;
+
+  const hintLine = Number(lineText);
+  if (!Number.isSafeInteger(hintLine)) {
+    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Line number must be a safe positive integer.`);
+  }
+  return { line: hintLine };
 }
 
 function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
