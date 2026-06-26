@@ -22,19 +22,19 @@ Preferred `patch` input is Codex-like and carries file paths. The tool accepts e
 +literal new file line
 *** Update File: existing.txt
 @@
- HHHH
--HHHH
- HHHH
+ exact context text
+-text to delete
+=HHHH
 @@
- HHHH
+ start context text
  ...
 +literal insertion after skipped context
- HHHH
+ end context text
 @@
- HHHH
+=HHHH
 -...
 +literal replacement content
- HHHH
+ end context text
 *** Delete File: old.txt
 *** End Patch
 ```
@@ -51,6 +51,7 @@ Patch must start with `*** Begin Patch` and end with `*** End Patch`. One operat
 
 - Target must not exist.
 - Each body row starts with `+`; text after `+` is literal file content.
+- Do not include hashes in `+` lines unless those hash characters are intended file content.
 - New file content is written as rows joined with `\n`; no implicit final newline is added.
 - Visible receipt exposes only header and `+HASH` rows, never content.
 
@@ -60,27 +61,27 @@ Update sections use hashline hunks:
 
 ```diff
 @@
- HHHH
--HHHH
+ exact context text
+-text to delete
 +literal inserted content
 @@
- HHHH
+ start context text
  ...
 +literal insertion after skipped context
- HHHH
+=HHHH
 @@
- HHHH
+=HHHH
 -...
 +literal replacement content
- HHHH
+ end context text
 ```
 
 Rules:
 
 - Hunk header must be exactly `@@`.
 - No source line numbers, duplicate counters, perfect hashes, or fuzzy anchors.
-- Operation prefixes: space = context, `-` = delete, `+` = insert.
-- Context/delete operations use locators after the operation prefix: hash-only (` HHHH`, `-HHHH`), hash+exact-text (` HHHH│text`, `-HHHH│text`), or exact-text (` │text`, `-│text`). Locator text is always introduced by Unicode `│`; bare context/delete text is invalid (` │.selector`, not ` .selector`). ASCII `|` is not special. Hash+text requires both hash and exact text to match. Insert operations contain literal content directly after `+` (`+new text`) and do not use the locator marker.
+- Operations: ` <text>` = exact context text, `-<text>` = exact delete text, `+<text>` = literal insertion, `=<hash>` = hash context, `~<hash>` = hash delete.
+- Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
 - Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
@@ -118,7 +119,9 @@ Update receipt lines include only:
 - ` HHHH` for context lines that survived in current file.
 - `+HHHH` for newly inserted lines.
 
-Deleted hashes are omitted from visible output. If receipt has no surviving context or inserted hashes, or exceeds visible output caps, patch still writes after valid apply and returns compact status telling caller to use `read`.
+Receipt rows are status output, not patch input syntax. Use `=HHHH` for hash context and `~HHHH` for hash delete in patch input.
+
+Deleted hashes are omitted from visible output. If receipt has no surviving context or inserted hashes, or exceeds visible output caps, patch still writes after valid apply and returns compact status.
 
 ## `details.diff`
 
@@ -126,4 +129,4 @@ Tool result details include `details.diff`: a human patch transcript for host/UI
 
 ## Collision risk
 
-4-character hashes expose 24 bits. Collisions are accepted behavior. Hash-only locators match by hash only. Hash+text locators also compare exact target content, which reduces collision risk. Context lines in receipt preserve actual target hashes after apply.
+4-character hashes expose 24 bits. Collisions are accepted behavior. Hash-only locators match by hash only. Use text-only locators when exact content is needed. Context lines in receipt preserve actual target hashes after apply.

@@ -6,7 +6,7 @@ import { hashLine, parseText } from "../src/api.js";
 import { patchTool } from "../src/tools/hashline-patch.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
-const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
   if (content.type !== "text") {
@@ -62,8 +62,8 @@ describe("patch visible receipt", () => {
     await expect(readFile(file, "utf8")).resolves.toBe("a\nnew\nz\n");
   });
 
-  it("applies update hunks with text-only and hash+text locators", async () => {
-    const diff = ["@@", " │a", `-${hashLine("old")}│old`, "+new", " │z"].join("\n");
+  it("applies update hunks with text-only locators", async () => {
+    const diff = ["@@", " a", "-old", "+new", " z"].join("\n");
 
     const { file, result } = await patchFile("a\nold\nz\n", diff);
 
@@ -130,6 +130,18 @@ describe("patch visible receipt", () => {
     expect(detailsDiff(result)).toContain("+++ b/added.txt");
     expect(detailsDiff(result)).toContain("+hello");
     await expect(readFile(join(dir, "added.txt"), "utf8")).resolves.toBe("hello\nworld");
+  });
+
+  it("allows hashline-looking inserted content and warns that insert lines are literal", async () => {
+    const dir = await makeTempDir();
+    const literal = `${hashLine("not the line")}│literal content`;
+    const patch = ["*** Begin Patch", "*** Add File: literal.txt", `+${literal}`, "*** End Patch"].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
+
+    expect(resultText(result)).toContain("Warning: 1 insert line in literal.txt looks like a hashline.");
+    expect(resultText(result)).toContain("Do not include hashes in `+` lines unless those hash characters are intended file content.");
+    await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(literal);
   });
 
   it("rejects Add File when target already exists", async () => {
@@ -409,17 +421,17 @@ describe("patch visible receipt", () => {
 
     const { file, result } = await patchFile("old", universal);
 
-    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*Use read/);
+    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*visible cap/);
     expect(resultText(result)).not.toContain("line-1");
     await expect(readFile(file, "utf8")).resolves.toBe(manyLines.join("\n"));
   });
 
-  it("omits empty receipts and tells caller to use read", async () => {
+  it("omits empty receipts", async () => {
     const diff = ["@@", row("-", "only")].join("\n");
 
     const { file, result } = await patchFile("only", diff);
 
-    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: no visible hash receipt\. Use read/);
+    expect(resultText(result)).toBe("Patch applied. Receipt omitted: no visible hash receipt.");
     await expect(readFile(file, "utf8")).resolves.toBe("");
   });
 });

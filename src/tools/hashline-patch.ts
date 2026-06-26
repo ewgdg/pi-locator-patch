@@ -19,7 +19,7 @@ import {
   writeNewTextFileAtomically,
   writeTextFileAtomically
 } from "../fs-text.js";
-import { hashLine } from "../hash.js";
+import { HASH_SEPARATOR, hashLine, isHash } from "../hash.js";
 import { countRenderedLines, getVisibleOutputOverflow, type VisibleOutputOverflow } from "../output-size.js";
 import { parseText, serializeText } from "../text-lines.js";
 import { parsePatchInput, serializeUniversalPatch, type AddFileOperation, type UniversalPatchOperation } from "../universal-patch-format.js";
@@ -46,6 +46,7 @@ interface PlannedFileChange {
   newText?: string;
   applyResult?: ApplyPatchResult;
   addedHashes?: string[];
+  warnings?: string[];
 }
 
 interface DryRunFileState {
@@ -60,6 +61,7 @@ export const patchTool = defineTool({
   promptSnippet: "Prefer for normal token-efficient file edits; supports multi-file changes in one patch call.",
   promptGuidelines: [
     "`patch` tool finds update targets by exact context/delete locators. No fuzzy matching.",
+    "Insert lines use raw content after `+`. Do not include hashes in `+` lines unless those hash characters are intended file content.",
     "During non-dry `patch` tool failures, the tool stops at the failed operation and writes a retry patch file containing unapplied operations. For large patches, save output tokens by editing the retry patch file and passing it via `patch_file` instead of re-emitting large patch text.",
     "On `patch` tool success, agent-visible output is a compact post-apply hash receipt/status for affected sections. Treat returned hashes as current for those sections."
   ],
@@ -68,7 +70,7 @@ export const patchTool = defineTool({
       patch: Type.Optional(
         Type.String({
           description:
-            "Inline patch text. Mutually exclusive with `patch_file`. Must start with `*** Begin Patch` and end with `*** End Patch`. May contain multiple `*** Add File`, `*** Update File`, and `*** Delete File` sections; `*** Update File` sections may contain multiple `@@` hunks. Context/delete locator forms after the operation prefix are `{HASH}`, `{HASH}│{text}`, or `│{text}` using Unicode `│`; bare context/delete text is invalid. Insert lines use `+{text}`. Ellipsis ranges must be between context locators: ` ...` preserves skipped lines and `-...` deletes skipped lines. Example:\n```\n*** Begin Patch\n*** Update File: path/to/file.txt\n@@\n │start context\n ...\n {HASH}│middle context\n-...\n+replacement text\n │end context\n*** End Patch\n```"
+            "Inline patch text. Mutually exclusive with `patch_file`. Must start with `*** Begin Patch` and end with `*** End Patch`. May contain multiple `*** Add File`, `*** Update File`, and `*** Delete File` sections; `*** Update File` sections may contain multiple `@@` hunks. Update hunk operations are ` <text>` context by exact text, `-<text>` delete by exact text, `+<text>` insert literal text, `=<hash>` context by hash, `~<hash>` delete by hash, ` ...` context range, and `-...` delete range. Do not use read-output `HASH│content` rows as patch operations. Insert lines use raw `+{text}` content; do not include hashes in `+` lines unless those hash characters are intended file content. Example:\n```\n*** Begin Patch\n*** Update File: path/to/file.txt\n@@\n start context\n ...\n=ABCD\n-...\n+replacement text\n end context\n*** End Patch\n```"
         })
       ),
       patch_file: Type.Optional(
@@ -226,7 +228,14 @@ async function planFileChangeForDryRun(operationTarget: OperationTarget, virtual
   if (operation.kind === "add") {
     await assertDryRunNewTarget(targetPath, state);
     const newText = serializeAddFileText(operation);
-    return { operation: "add", patchPath: operation.path, targetPath, newText, addedHashes: operation.lines.map(hashLine) };
+    return {
+      operation: "add",
+      patchPath: operation.path,
+      targetPath,
+      newText,
+      addedHashes: operation.lines.map(hashLine),
+      warnings: buildInsertWarnings(operation)
+    };
   }
 
   const oldText = await readDryRunExistingText(targetPath, state);
@@ -235,7 +244,7 @@ async function planFileChangeForDryRun(operationTarget: OperationTarget, virtual
   }
 
   const applyResult = applyPatchToText(oldText, operation.patch);
-  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult };
+  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult, warnings: buildInsertWarnings(operation) };
 }
 
 async function assertDryRunNewTarget(targetPath: string, state: DryRunFileState | undefined): Promise<void> {
@@ -328,6 +337,7 @@ function formatCause(cause: unknown): string {
 
 function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryRun: boolean) {
   const receipt = buildPatchReceiptDecision(plannedChanges, dryRun);
+  const warnings = plannedChanges.flatMap((change) => change.warnings ?? []);
   return {
     content: [{ type: "text" as const, text: receipt.text }],
     details: {
@@ -351,7 +361,8 @@ function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryR
         omitReason: receipt.omitReason,
         overflow: receipt.overflow,
         visibleLineCount: receipt.visibleLineCount
-      }
+      },
+      warnings
     }
   };
 }
@@ -361,7 +372,14 @@ async function planFileChange(operationTarget: OperationTarget): Promise<Planned
   if (operation.kind === "add") {
     const newText = serializeAddFileText(operation);
     await assertNewTextFileTarget(targetPath);
-    return { operation: "add", patchPath: operation.path, targetPath, newText, addedHashes: operation.lines.map(hashLine) };
+    return {
+      operation: "add",
+      patchPath: operation.path,
+      targetPath,
+      newText,
+      addedHashes: operation.lines.map(hashLine),
+      warnings: buildInsertWarnings(operation)
+    };
   }
 
   await assertExistingTextFileMutationTarget(targetPath);
@@ -372,7 +390,7 @@ async function planFileChange(operationTarget: OperationTarget): Promise<Planned
   }
 
   const applyResult = applyPatchToText(oldText, operation.patch);
-  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult };
+  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult, warnings: buildInsertWarnings(operation) };
 }
 
 async function writePlannedChange(change: PlannedFileChange): Promise<void> {
@@ -408,33 +426,68 @@ function serializeAddFileText(operation: AddFileOperation): string {
 
 function buildPatchReceiptDecision(plannedChanges: readonly PlannedFileChange[], dryRun: boolean): PatchReceiptDecision {
   const renderedReceipt = renderUniversalPatchReceipt(plannedChanges);
+  const renderedWarnings = renderPatchWarnings(plannedChanges);
   const action = dryRun ? "Patch dry-run succeeded" : "Patch applied";
   if (renderedReceipt.length === 0) {
+    const text = joinVisibleSections(renderedWarnings, `${action}. Receipt omitted: no visible hash receipt.`);
     return {
-      text: `${action}. Receipt omitted: no visible hash receipt. Use read to inspect current file hashes.`,
+      text,
       omitted: true,
       omitReason: "empty",
-      visibleLineCount: 1
+      visibleLineCount: countRenderedLines(text)
     };
   }
 
-  const visibleLineCount = countRenderedLines(renderedReceipt);
-  const overflow = getVisibleOutputOverflow(renderedReceipt, visibleLineCount);
+  const visibleText = joinVisibleSections(renderedWarnings, renderedReceipt);
+  const visibleLineCount = countRenderedLines(visibleText);
+  const overflow = getVisibleOutputOverflow(visibleText, visibleLineCount);
   if (overflow) {
+    const text = joinVisibleSections(renderedWarnings, `${action}. Receipt omitted: ${overflow.actual} exceeds visible cap ${overflow.max}.`);
     return {
-      text: `${action}. Receipt omitted: ${overflow.actual} exceeds visible cap ${overflow.max}. Use read to inspect current file hashes.`,
+      text,
       omitted: true,
       omitReason: "too_large",
       overflow,
-      visibleLineCount
+      visibleLineCount: countRenderedLines(text)
     };
   }
 
   return {
-    text: renderedReceipt,
+    text: visibleText,
     omitted: false,
     visibleLineCount
   };
+}
+
+function buildInsertWarnings(operation: UniversalPatchOperation): string[] {
+  const suspiciousCount = countHashlikeInsertLines(operation);
+  if (suspiciousCount === 0) return [];
+  const plural = suspiciousCount === 1 ? "" : "s";
+  const verb = suspiciousCount === 1 ? "looks" : "look";
+  return [
+    `Warning: ${suspiciousCount} insert line${plural} in ${operation.path} ${verb} like a hashline. ` +
+      "Insert lines are literal content. Do not include hashes in `+` lines unless those hash characters are intended file content."
+  ];
+}
+
+function countHashlikeInsertLines(operation: UniversalPatchOperation): number {
+  if (operation.kind === "delete") return 0;
+  const insertedLines = operation.kind === "add"
+    ? operation.lines
+    : operation.patch.hunks.flatMap((hunk) => hunk.ops.flatMap((op) => op.kind === "insert" ? [op.content] : []));
+  return insertedLines.filter(looksLikeHashline).length;
+}
+
+function looksLikeHashline(value: string): boolean {
+  return value.length > 4 && isHash(value.slice(0, 4)) && value[4] === HASH_SEPARATOR;
+}
+
+function renderPatchWarnings(plannedChanges: readonly PlannedFileChange[]): string {
+  return plannedChanges.flatMap((change) => change.warnings ?? []).join("\n");
+}
+
+function joinVisibleSections(...sections: readonly string[]): string {
+  return sections.filter((section) => section.length > 0).join("\n");
 }
 
 function renderUniversalPatchReceipt(plannedChanges: readonly PlannedFileChange[]): string {

@@ -1,4 +1,4 @@
-import { AmbiguousHunkError, StaleHunkError, UnsupportedHunkError } from "./errors.js";
+import { AmbiguousHunkError, InvalidPatchError, StaleHunkError, UnsupportedHunkError } from "./errors.js";
 import { type HashFunction, hashLine } from "./hash.js";
 import { parsePatch, type Hunk, type MatchPatchOp, type Patch } from "./patch-format.js";
 import { renderHashLines, toHashLines, type HashLineEntry } from "./read-format.js";
@@ -110,6 +110,7 @@ function renderPatchReceiptLine(line: PatchReceiptLine): string {
 }
 
 function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {
+  validateNoHashTextLocators(hunk, hunkIndex);
   const matchPattern = buildMatchPattern(hunk);
 
   if (matchPattern.length === 0) {
@@ -262,9 +263,9 @@ function buildMatchPattern(hunk: Hunk): string[] {
 
 function renderMatchLocator(op: MatchPatchOp): string {
   if (!hasMatchLocator(op)) return "<missing locator>";
-  const hash = op.hash ?? "";
-  if (op.content === undefined) return hash;
-  return `${hash}│${op.content}`;
+  if (op.hash !== undefined && op.content !== undefined) return "<invalid hash+text locator>";
+  if (op.hash !== undefined) return `${op.kind === "context" ? "=" : "~"}${op.hash}`;
+  return `${op.kind === "context" ? " " : "-"}${op.content ?? ""}`;
 }
 
 function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
@@ -274,6 +275,14 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
     const nextMatchOp = findNearestMatchOp(hunk.ops, opIndex, 1);
     if (previousMatchOp?.kind !== "context" || nextMatchOp?.kind !== "context") {
       throw new UnsupportedHunkError(`Hunk ${hunkIndex} '${op.rangeKind === "delete" ? "-..." : " ..."}' must be between context operations.`);
+    }
+  }
+}
+
+function validateNoHashTextLocators(hunk: Hunk, hunkIndex: number): void {
+  for (const op of hunk.ops) {
+    if (isMatchOp(op) && op.hash !== undefined && op.content !== undefined) {
+      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only (=HASH/~HASH) or text-only ( <text>/-<text>).`);
     }
   }
 }

@@ -56,6 +56,6 @@ function outputTooLargeError(toolName: HashlineToolName, overflow: VisibleOutput
   }
 
   return new OutputTooLargeError(
-    `patch visible receipt is ${overflow.actual}, exceeding ${overflow.max}. Patch was not written by this guard; use read to inspect current file hashes.`
+    `patch visible receipt is ${overflow.actual}, exceeding ${overflow.max}. Patch was not written by this guard.`
   );
 }

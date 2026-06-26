@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashLine(content)}`;
 
 describe("universal patch parser", () => {
   it("accepts Codex-like add, update, and delete file sections", () => {
@@ -45,11 +45,13 @@ describe("universal patch parser", () => {
       "+hello",
       "*** Update File: existing.txt",
       "@@",
-      ` ${hashLine("ctx")}│ctx`,
+      row(" ", "ctx"),
+      row("-", "old"),
+      " ctx",
       " ...",
       row("+", "new"),
       "-...",
-      " │after",
+      " after",
       "*** Delete File: doomed.txt",
       "*** End Patch"
     ].join("\n");
@@ -57,6 +59,18 @@ describe("universal patch parser", () => {
     const serialized = serializeUniversalPatch(parseUniversalPatch(source).operations);
 
     expect(serialized).toBe(source);
+    expect(serialized).toContain(`=${hashLine("ctx")}`);
+    expect(serialized).toContain(`~${hashLine("old")}`);
     expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update", "delete"]);
+  });
+
+  it("rejects serializing invalid hash+text match operations", () => {
+    expect(() => serializeUniversalPatch([
+      {
+        kind: "update",
+        path: "existing.txt",
+        patch: { hunks: [{ ops: [{ kind: "context", hash: hashLine("ctx"), content: "ctx" }] }] }
+      }
+    ])).toThrow("Hash+text locators are not supported");
   });
 });

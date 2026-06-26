@@ -1,5 +1,5 @@
 import { InvalidPatchError } from "./errors.js";
-import { HASH_SEPARATOR, isHash, type HashFunction, hashLine } from "./hash.js";
+import { isHash, type HashFunction, hashLine } from "./hash.js";
 
 export type MatchPatchOpKind = "context" | "delete";
 export type RangePatchOpKind = "context" | "delete";
@@ -31,12 +31,6 @@ export interface Hunk {
 export interface Patch {
   hunks: Hunk[];
 }
-
-const OP_KIND_BY_PREFIX: Record<string, MatchPatchOpKind | "insert"> = {
-  " ": "context",
-  "-": "delete",
-  "+": "insert"
-};
 
 export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): Patch {
   const lines = splitPatchLines(patchText);
@@ -98,42 +92,31 @@ function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
     return { kind: "range", rangeKind: "delete" };
   }
 
-  const prefix = line[0];
-
-  const kind = OP_KIND_BY_PREFIX[prefix];
-  if (!kind) {
-    throw new InvalidPatchError(`Malformed patch operation '${line}'.`);
+  if (line.startsWith("+")) {
+    const content = line.slice(1);
+    return { kind: "insert", hash: hashFn(content), content };
+  }
+  if (line.startsWith("=")) {
+    return parseHashPatchOp("context", line.slice(1), line);
+  }
+  if (line.startsWith("~")) {
+    return parseHashPatchOp("delete", line.slice(1), line);
+  }
+  if (line.startsWith(" ")) {
+    return { kind: "context", content: line.slice(1) };
+  }
+  if (line.startsWith("-")) {
+    return { kind: "delete", content: line.slice(1) };
   }
 
-  const body = line.slice(1);
-  if (kind === "insert") {
-    if (looksLikeHashline(body)) {
-      throw new InvalidPatchError("Insert lines must be literal content prefixed with '+', not HASH│content from read output.");
-    }
-    return { kind, hash: hashFn(body), content: body };
-  }
-
-  if (body.startsWith(HASH_SEPARATOR)) {
-    return { kind, content: body.slice(HASH_SEPARATOR.length) };
-  }
-
-  const separatorIndex = body.indexOf(HASH_SEPARATOR);
-  if (separatorIndex === 4 && isHash(body.slice(0, 4))) {
-    return { kind, hash: body.slice(0, 4), content: body.slice(4 + HASH_SEPARATOR.length) };
-  }
-
-  if (isHash(body)) {
-    return { kind, hash: body };
-  }
-
-  const hint = body.includes(HASH_SEPARATOR)
-    ? "Use HASH│text or │text for context/delete lines; the hash must be exactly 4 valid characters before the separator."
-    : "Context/delete lines must contain a 4-character hash, HASH│text, or │text.";
-  throw new InvalidPatchError(`Malformed ${kind} operation '${line}'. ${hint}`);
+  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use ' <text>', '-<text>', '+<text>', '=<hash>', '~<hash>', ' ...', or '-...'.`);
 }
 
-function looksLikeHashline(value: string): boolean {
-  return value.length > 4 && isHash(value.slice(0, 4)) && value[4] === HASH_SEPARATOR;
+function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string): MatchPatchOp {
+  if (!isHash(hash)) {
+    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be exactly 4 base64url characters after '${kind === "context" ? "=" : "~"}'.`);
+  }
+  return { kind, hash };
 }
 
 function splitPatchLines(text: string): string[] {

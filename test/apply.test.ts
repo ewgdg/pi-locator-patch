@@ -7,7 +7,7 @@ import {
   hashLine
 } from "../src/api.js";
 
-const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashFn(content)}`;
+const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashFn(content)}`;
 const patch = (...lines: string[]) => ["@@", ...lines].join("\n");
 
 describe("applyPatchToText", () => {
@@ -34,32 +34,29 @@ describe("applyPatchToText", () => {
     expect(insertResult.text).toBe("start\nmiddle\nend");
   });
 
-  it("matches context/delete locators by hash-only, hash+text, and text-only forms", () => {
+  it("matches context/delete locators by hash-only and text-only forms", () => {
     const result = applyPatchToText(
       "a\nold\nz",
-      patch(` ${hashLine("a")}`, `-${hashLine("old")}│old`, "+new", " │z")
+      patch(row(" ", "a"), "-old", "+new", " z")
     );
 
     expect(result.text).toBe("a\nnew\nz");
   });
 
-  it("requires hash+text locators to match both hash and exact text", () => {
-    const hashFn = (content: string) => (content === "target" || content === "patch" ? "AAAA" : hashLine(content));
-
-    expect(() => applyPatchToText("target\nold", patch(" AAAA│patch", `-${hashLine("old")}│old`), { hashFn })).toThrow(StaleHunkError);
-    expect(applyPatchToText("target\nold", patch(" AAAA│target", `-${hashLine("old")}│old`), { hashFn }).text).toBe("target");
+  it("rejects API match ops containing both hash and text", () => {
+    expect(() => applyPatchToText("target\nold", { hunks: [{ ops: [{ kind: "context", hash: hashLine("target"), content: "target" }] }] })).toThrow("hash+text locators are not supported");
   });
 
   it("matches blank-line and separator-leading text locators", () => {
-    const blankResult = applyPatchToText("start\n\nend", patch(" │start", "-│", " │end"));
+    const blankResult = applyPatchToText("start\n\nend", patch(" start", "-", " end"));
     expect(blankResult.text).toBe("start\nend");
 
-    const separatorResult = applyPatchToText("start\n│old\nend", patch(" │start", "-││old", "+new", " │end"));
+    const separatorResult = applyPatchToText("start\n│old\nend", patch(" start", "-│old", "+new", " end"));
     expect(separatorResult.text).toBe("start\nnew\nend");
   });
 
   it("uses text locators as sparse range anchors", () => {
-    const result = applyPatchToText("start\nremove\nend", patch(" │start", "-...", " │end"));
+    const result = applyPatchToText("start\nremove\nend", patch(" start", "-...", " end"));
 
     expect(result.text).toBe("start\nend");
   });

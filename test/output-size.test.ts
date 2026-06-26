@@ -12,7 +12,7 @@ import { patchTool } from "../src/tools/hashline-patch.js";
 import { readTool } from "../src/tools/hashline-read.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-hashline-patch-"));
-const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix === " " ? "=" : "~"}${hashLine(content)}`;
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;
 const oversizedContent = () => "x".repeat(LLM_VISIBLE_OUTPUT_MAX_BYTES + 1);
 const oneOverLineCap = () => Array.from({ length: LLM_VISIBLE_OUTPUT_MAX_LINES + 1 }, (_, index) => `line-${index}`);
@@ -42,6 +42,16 @@ describe("tool output size guards", () => {
     expect(() => assertHashlineOutputFits("read", rendered, rows.length)).toThrow(
       /\[E_OUTPUT_TOO_LARGE\].*lines.*lower limit.*offset/
     );
+  });
+
+  it("rejects overlarge patch guard output without redundant read guidance", () => {
+    const rows = oneOverLineCap();
+    const rendered = rows.map((content) => `+${hashLine(content)}`).join("\n");
+
+    expect(() => assertHashlineOutputFits("patch", rendered, rows.length)).toThrow(
+      /\[E_OUTPUT_TOO_LARGE\].*Patch was not written by this guard\./
+    );
+    expect(() => assertHashlineOutputFits("patch", rendered, rows.length)).not.toThrow(/Use read to inspect current file hashes/);
   });
 
   it("writes huge patch result and returns compact receipt instead of full content", async () => {
@@ -79,7 +89,7 @@ describe("tool output size guards", () => {
       { cwd: dir } as never
     );
 
-    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*lines.*Use read/);
+    expect(resultText(result)).toMatch(/Patch applied\. Receipt omitted: .*exceeds visible cap/);
     await expect(readFile(file, "utf8")).resolves.toBe(insertedRows.join("\n"));
   });
 });
