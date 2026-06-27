@@ -17,6 +17,17 @@ export interface PatchDiffStats {
   totalLines: number;
 }
 
+export interface PatchMatcherStats {
+  exact: number;
+  prefix: number;
+  contains: number;
+  suffix: number;
+  hash: number;
+  combined: number;
+  range: number;
+  total: number;
+}
+
 export interface FormattedPatchResultDiff {
   text: string;
   omittedLineCount: number;
@@ -47,6 +58,32 @@ export function getPatchDiffStats(diff: string): PatchDiffStats {
     if (line.startsWith("-") && !line.startsWith("---")) removals += 1;
   }
   return { additions, removals, totalLines: lines.length };
+}
+
+export function getPatchMatcherStats(details: unknown): PatchMatcherStats {
+  const stats = createEmptyPatchMatcherStats();
+  if (!isRecord(details) || !Array.isArray(details.files)) {
+    return stats;
+  }
+
+  for (const file of details.files) {
+    if (!isRecord(file) || !isRecord(file.audit) || !Array.isArray(file.audit.hunkAudits)) {
+      continue;
+    }
+    for (const hunkAudit of file.audit.hunkAudits) {
+      if (!isRecord(hunkAudit) || !Array.isArray(hunkAudit.matchPattern)) {
+        continue;
+      }
+      for (const matchPattern of hunkAudit.matchPattern) {
+        if (typeof matchPattern !== "string") {
+          continue;
+        }
+        incrementPatchMatcherStats(stats, matchPattern);
+      }
+    }
+  }
+
+  return stats;
 }
 
 export function formatPatchResultDiff(diff: string, expanded: boolean, theme: PatchRenderTheme): FormattedPatchResultDiff {
@@ -173,8 +210,57 @@ export function buildPatchResultRenderText(options: {
     theme.fg("toolDiffRemoved", `-${stats.removals}`),
   ];
   const renderedDiff = formatPatchResultDiff(diff, expanded, theme);
+  const matcherStatsFooter = formatPatchMatcherStatsFooter(getPatchMatcherStats(details), theme);
+  const body = [`${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}`, renderedDiff.text, matcherStatsFooter];
 
-  return `${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}\n${renderedDiff.text}`;
+  return body.filter((part): part is string => Boolean(part)).join("\n");
+}
+
+function createEmptyPatchMatcherStats(): PatchMatcherStats {
+  return { exact: 0, prefix: 0, contains: 0, suffix: 0, hash: 0, combined: 0, range: 0, total: 0 };
+}
+
+function incrementPatchMatcherStats(stats: PatchMatcherStats, matchPattern: string): void {
+  const selector = matchPattern.startsWith(" ") || matchPattern.startsWith("-") ? matchPattern.slice(1) : matchPattern;
+  if (selector === "...") {
+    stats.range += 1;
+  } else if (selector.startsWith(":")) {
+    stats.exact += 1;
+  } else if (selector.startsWith("^")) {
+    stats.prefix += 1;
+  } else if (selector.startsWith("*")) {
+    stats.contains += 1;
+  } else if (selector.startsWith("$")) {
+    stats.suffix += 1;
+  } else if (selector.startsWith("#")) {
+    stats.hash += 1;
+  } else if (selector.startsWith("?")) {
+    stats.combined += 1;
+  } else {
+    return;
+  }
+  stats.total += 1;
+}
+
+function formatPatchMatcherStatsFooter(stats: PatchMatcherStats, theme: PatchRenderTheme): string | undefined {
+  if (stats.total === 0) {
+    return undefined;
+  }
+
+  const entries: Array<[string, number]> = [
+    ["exact", stats.exact],
+    ["prefix", stats.prefix],
+    ["contains", stats.contains],
+    ["suffix", stats.suffix],
+    ["hash", stats.hash],
+    ["combined", stats.combined],
+    ["range", stats.range]
+  ];
+  const parts = entries
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${label} ${count}`);
+
+  return theme.fg("muted", `Matchers: ${parts.join(" / ")}`);
 }
 
 function formatPatchTextPreview(label: string, text: string, expanded: boolean, theme: PatchRenderTheme, targetLine?: number): string {

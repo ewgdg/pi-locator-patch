@@ -7,6 +7,7 @@ import {
   buildPatchCallRenderText,
   buildPatchResultRenderText,
   formatPatchResultDiff,
+  getPatchMatcherStats,
   getPatchDiffStats,
   getPatchResultDiff,
   getPatchResultText,
@@ -64,6 +65,43 @@ describe("patch renderer helpers", () => {
     const diff = ["--- a/file", "+++ b/file", "@@ -1,1 +1,1 @@", "-old", "+new"].join("\n");
 
     expect(getPatchDiffStats(diff)).toEqual({ additions: 1, removals: 1, totalLines: 5 });
+  });
+
+  it("counts matcher locator kinds from hunk audit match patterns", () => {
+    const details = {
+      files: [
+        {
+          audit: {
+            hunkAudits: [
+              {
+                matchPattern: [
+                  " :exact context",
+                  "-:exact delete",
+                  " ^prefix",
+                  "-*contains",
+                  " $suffix",
+                  "-#abc",
+                  " ?{\"prefix\":\"a\"}",
+                  " ...",
+                  "-..."
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    };
+
+    expect(getPatchMatcherStats(details)).toEqual({
+      exact: 2,
+      prefix: 1,
+      contains: 1,
+      suffix: 1,
+      hash: 1,
+      combined: 1,
+      range: 2,
+      total: 9
+    });
   });
 
   it("renders collapsed diff with compact limit, color, omission count, and Ctrl+O hint", () => {
@@ -164,7 +202,17 @@ describe("patch renderer helpers", () => {
     const diff = ["--- a/file", "+++ b/file", "@@ -1,1 +1,1 @@", "-old", "+new"].join("\n");
     const rendered = buildPatchResultRenderText({
       resultText: "*** Update File: file\nValidated",
-      details: { dryRun: true, diff },
+      details: {
+        dryRun: true,
+        diff,
+        files: [
+          {
+            audit: {
+              hunkAudits: [{ matchPattern: ["-:old", " #abcd", " ?{\"contains\":[\"needle\"]}"] }]
+            }
+          }
+        ]
+      },
       expanded: false,
       isPartial: false,
       isError: false,
@@ -176,6 +224,7 @@ describe("patch renderer helpers", () => {
     expect(rendered).toContain("<toolDiffRemoved>-1</toolDiffRemoved>");
     expect(rendered).toContain("<toolDiffRemoved>-old</toolDiffRemoved>");
     expect(rendered).toContain("<toolDiffAdded>+new</toolDiffAdded>");
+    expect(rendered).toContain("<muted>Matchers: exact 1 / hash 1 / combined 1</muted>");
     expect(rendered).not.toContain("*** Update File: file");
   });
 });
