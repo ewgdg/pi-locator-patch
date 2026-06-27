@@ -2,13 +2,13 @@
 
 ## Optional hash locators
 
-Text reads are plain by default. Pass `includeHashes: true` to render eligible logical text lines as:
+Use `read_hash` to render eligible logical text lines as:
 
 ```text
 HASH│content
 ```
 
-Short or low-entropy lines may remain plain even with `includeHashes: true`: `trim().length < 8` or entropy `< 10` shows no hash, entropy `< 20` shows 3 chars, otherwise 4. `HASH` is the first 3 or 4 characters of the SHA-256 based full line hash. Line terminators are excluded. Duplicate content produces same full hash and same visible prefix.
+Short or low-entropy lines may remain plain in `read_hash` output: `trim().length < 8` or entropy `< 10` shows no hash, entropy `< 20` shows 3 chars, otherwise 4. `HASH` is the first 3 or 4 characters of the SHA-256 based full line hash. Line terminators are excluded. Duplicate content produces same full hash and same visible prefix.
 
 Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline convention (`LF`, `CRLF`, or `CR`) and final-newline state are preserved on update write. Empty file has zero logical lines.
 
@@ -84,7 +84,7 @@ Rules:
 - No source/destination diff ranges, duplicate counters, perfect hashes, or fuzzy anchors.
 - Context/delete rows use `<operation><selector><locator>` syntax: `<operation>` is `=` for context or `-` for delete; `<selector>` is `:`, `^`, `*`, `?`, `$`, `#`, or `...`; `<locator>` is selector-specific text, hash, or JSON. Forms: `=:<text>` / `-:<text>` = exact context/delete text, `=^<prefix>` / `-^<prefix>` = prefix context/delete text, `=*<needle>` / `-*<needle>` = contains context/delete text, `=?{...}` / `-?{...}` = combined context/delete text, `=$<suffix>` / `-$<suffix>` = suffix context/delete text, `=#<hash>` / `-#<hash>` = hash context/delete (3 or 4 base64url characters), `=...` = skipped context range, `-...` = delete range. Insert rows use `+<content>` and have no selector.
 - Combined selector JSON (`=?{...}` / `-?{...}`) must be an object with only `prefix`, `contains`, and `suffix`; at least one key is required. `prefix`/`suffix` must be non-empty strings. `contains` may be a non-empty string or non-empty array of non-empty strings. All supplied predicates must match the same line.
-- Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
+- Do not use `read_hash` output rows (`HASH│content`) as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - `=...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
 - Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
@@ -114,7 +114,7 @@ Applied
 Deleted file
 ```
 
-Visible status rows include only file operation headers plus `Applied`, `Validated` for dry runs, or `Deleted file`. They do not include file content or post-apply hashes. Use `read` with `includeHashes: true` when current hashes are needed.
+Visible status rows include only file operation headers plus `Applied`, `Validated` for dry runs, or `Deleted file`. They do not include file content or post-apply hashes. Use `read_hash` when current hashes are needed.
 
 ## `details.diff`
 
@@ -122,4 +122,4 @@ Tool result details include `details.diff`: a human patch transcript for host/UI
 
 ## Collision risk
 
-Visible hash locators expose 18 bits at 3 characters or 24 bits at 4 characters. Collisions are accepted behavior. Hash-only locators match by hash prefix only. Use text-only locators when exact content is needed. Use `read` with `includeHashes: true` to retrieve current target hashes after apply.
+Visible hash locators expose 18 bits at 3 characters or 24 bits at 4 characters. Collisions are accepted behavior. Hash-only locators match by hash prefix only. Use text-only locators when exact content is needed. Use `read_hash` to retrieve current target hashes after apply.

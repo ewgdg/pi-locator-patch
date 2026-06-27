@@ -130,7 +130,7 @@ describe("patch visible status", () => {
     await expect(readFile(join(dir, "added.txt"), "utf8")).resolves.toBe("hello\nworld");
   });
 
-  it("allows hashline-looking inserted content and warns that insert lines are literal", async () => {
+  it("allows hashline-looking inserted content as literal file content", async () => {
     const dir = await makeTempDir();
     const literal = `${hashLine("not the line")}│literal content`;
     const shortHashLiteral = `${hashLine("another line").slice(0, 3)}│short hash literal`;
@@ -138,8 +138,7 @@ describe("patch visible status", () => {
 
     const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
-    expect(resultText(result)).toContain("Warning: 2 insert lines in literal.txt look like a locator.");
-    expect(resultText(result)).toContain("Do not include hashes in `+` lines unless those hash characters are intended file content.");
+    expect(resultText(result)).toBe(["*** Add File: literal.txt", "Applied"].join("\n"));
     await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(`${literal}\n${shortHashLiteral}`);
   });
 

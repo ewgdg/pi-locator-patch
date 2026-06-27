@@ -9,7 +9,7 @@ import {
   LLM_VISIBLE_OUTPUT_MAX_LINES
 } from "../src/output-size.js";
 import { patchTool } from "../src/tools/locator-patch.js";
-import { readTool } from "../src/tools/locator-read.js";
+import { readHashTool } from "../src/tools/locator-read.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 const row = (prefix: "=" | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
@@ -25,33 +25,33 @@ const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
 };
 
 describe("tool output size guards", () => {
-  it("rejects read output for one overlarge line with pagination guidance", async () => {
+  it("rejects read_hash output for one overlarge line with pagination guidance", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "large.txt");
     await writeFile(file, oversizedContent());
 
     await expect(
-      readTool.execute("tool-call", { path: "large.txt", limit: 1 }, undefined, undefined, { cwd: dir } as never)
+      readHashTool.execute("tool-call", { path: "large.txt", limit: 1 }, undefined, undefined, { cwd: dir } as never)
     ).rejects.toThrow(/\[E_OUTPUT_TOO_LARGE\].*lower limit.*offset/);
   });
 
-  it("rejects read output when rendered rows exceed the visible line cap", () => {
+  it("rejects read_hash output when rendered rows exceed the visible line cap", () => {
     const rows = oneOverLineCap();
     const rendered = rows.map(renderedRow).join("\n");
 
-    expect(() => assertHashlineOutputFits("read", rendered, rows.length)).toThrow(
+    expect(() => assertHashlineOutputFits("read_hash", rendered, rows.length)).toThrow(
       /\[E_OUTPUT_TOO_LARGE\].*lines.*lower limit.*offset/
     );
   });
 
-  it("rejects overlarge patch guard output without redundant read guidance", () => {
+  it("rejects overlarge patch guard output without redundant read_hash guidance", () => {
     const rows = oneOverLineCap();
     const rendered = rows.map((content) => `+${hashLine(content)}`).join("\n");
 
     expect(() => assertHashlineOutputFits("patch", rendered, rows.length)).toThrow(
       /\[E_OUTPUT_TOO_LARGE\].*Patch was not written by this guard\./
     );
-    expect(() => assertHashlineOutputFits("patch", rendered, rows.length)).not.toThrow(/Use read to inspect current file hashes/);
+    expect(() => assertHashlineOutputFits("patch", rendered, rows.length)).not.toThrow(/Use read_hash to inspect current file hashes/);
   });
 
   it("writes huge patch result and returns compact status instead of full content", async () => {
