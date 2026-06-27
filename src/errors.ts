@@ -43,20 +43,20 @@ export class InvalidPatchError extends HashlinePatchError {
 }
 
 export class StaleHunkError extends HashlinePatchError {
-  constructor(message: string) {
-    super("[E_STALE_HUNK]", message);
+  constructor(message: string, location?: PatchErrorLocation) {
+    super("[E_STALE_HUNK]", message, location);
   }
 }
 
 export class AmbiguousHunkError extends HashlinePatchError {
-  constructor(message: string) {
-    super("[E_AMBIGUOUS_HUNK]", message);
+  constructor(message: string, location?: PatchErrorLocation) {
+    super("[E_AMBIGUOUS_HUNK]", message, location);
   }
 }
 
 export class UnsupportedHunkError extends HashlinePatchError {
-  constructor(message: string) {
-    super("[E_UNSUPPORTED_HUNK]", message);
+  constructor(message: string, location?: PatchErrorLocation) {
+    super("[E_UNSUPPORTED_HUNK]", message, location);
   }
 }
 

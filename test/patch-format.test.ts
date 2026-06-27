@@ -123,12 +123,12 @@ describe("patch parser", () => {
   });
 
   it("rejects empty prefix, contains, and suffix text locators", () => {
-    expect(() => parsePatch("@@\n=^")).toThrow("Prefix selectors require non-empty text");
-    expect(() => parsePatch("@@\n-^" )).toThrow("Prefix selectors require non-empty text");
-    expect(() => parsePatch("@@\n=*")).toThrow("Contains selectors require non-empty text");
-    expect(() => parsePatch("@@\n-*")).toThrow("Contains selectors require non-empty text");
-    expect(() => parsePatch("@@\n=$")).toThrow("Suffix selectors require non-empty text");
-    expect(() => parsePatch("@@\n-$")).toThrow("Suffix selectors require non-empty text");
+    expect(() => parsePatch("@@\n=^")).toThrow("Line 2: Malformed context prefix locator. Expected non-empty text after ^.");
+    expect(() => parsePatch("@@\n-^" )).toThrow("Line 2: Malformed delete prefix locator. Expected non-empty text after ^.");
+    expect(() => parsePatch("@@\n=*")).toThrow("Line 2: Malformed context contains locator. Expected non-empty text after *.");
+    expect(() => parsePatch("@@\n-*")).toThrow("Line 2: Malformed delete contains locator. Expected non-empty text after *.");
+    expect(() => parsePatch("@@\n=$")).toThrow("Line 2: Malformed context suffix locator. Expected non-empty text after $.");
+    expect(() => parsePatch("@@\n-$")).toThrow("Line 2: Malformed delete suffix locator. Expected non-empty text after $.");
   });
 
   it("parses blank text context/delete locators", () => {

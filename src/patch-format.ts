@@ -22,17 +22,20 @@ export interface MatchPatchOp {
   textSelector?: TextSelectorKind;
   combinedSelector?: CombinedTextSelector;
   unifiedDiff?: boolean;
+  inputLine?: number;
 }
 
 export interface InsertPatchOp {
   kind: "insert";
   hash: string;
   content: string;
+  inputLine?: number;
 }
 
 export interface RangePatchOp {
   kind: "range";
   rangeKind: RangePatchOpKind;
+  inputLine?: number;
 }
 
 export interface HunkAnchorHint {
@@ -43,6 +46,7 @@ export interface HunkAnchorHint {
 export interface Hunk {
   anchorHint?: HunkAnchorHint;
   ops: PatchOp[];
+  inputLine?: number;
 }
 
 export interface Patch {
@@ -89,7 +93,7 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, l
     if (ops.length === 0) {
       throw new InvalidPatchError("Hunk must contain at least one operation.", { inputLine: hunkHeaderLine });
     }
-    hunks.push({ ...(anchorHint ? { anchorHint } : {}), ops });
+    hunks.push({ ...(anchorHint ? { anchorHint } : {}), ops, inputLine: hunkHeaderLine });
   }
 
   if (hunks.length === 0) {
@@ -123,9 +127,9 @@ function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | unde
   const match = HUNK_HEADER_PATTERN.exec(line);
   if (!match) {
     if (line.startsWith("@@")) {
-      throw new InvalidPatchError("Hunk header must be '@@', '@@ @<positive-line>', or '@@ @<start>...<end>'.", { inputLine });
+      throw new InvalidPatchError("Malformed hunk header. Use @@, @@ @<positive-line>, or @@ @<start>...<end>.", { inputLine });
     }
-    throw new InvalidPatchError(`Expected hunk header '@@', got '${line}'.`, { inputLine });
+    throw new InvalidPatchError("Expected hunk header.", { inputLine });
   }
 
   const lineText = match[1];
@@ -135,10 +139,10 @@ function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | unde
   const endLineText = match[2];
   const endLine = endLineText === undefined ? undefined : Number(endLineText);
   if (!Number.isSafeInteger(hintLine) || (endLine !== undefined && !Number.isSafeInteger(endLine))) {
-    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Line numbers must be safe positive integers.`, { inputLine });
+    throw new InvalidPatchError("Malformed hunk anchor hint. Line numbers must be safe positive integers.", { inputLine });
   }
   if (endLine !== undefined && hintLine > endLine) {
-    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Start line must be less than or equal to end line.`, { inputLine });
+    throw new InvalidPatchError("Malformed hunk anchor hint. Start line must be less than or equal to end line.", { inputLine });
   }
   return endLine === undefined ? { line: hintLine } : { line: hintLine, endLine };
 }
@@ -159,26 +163,26 @@ function hasLocatorMarker(selector: string): boolean {
 
 function parseUnifiedDiffOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
   if (line === "") {
-    return { kind: "context", content: "", textSelector: "exact", unifiedDiff: true };
+    return { kind: "context", content: "", textSelector: "exact", unifiedDiff: true, inputLine };
   }
   if (line.startsWith("+")) {
     const content = line.slice(1);
-    return { kind: "insert", hash: hashFn(content), content };
+    return { kind: "insert", hash: hashFn(content), content, inputLine };
   }
   if (line.startsWith("=") || line.startsWith(" ")) {
-    return { kind: "context", content: line.slice(1), textSelector: "exact", unifiedDiff: true };
+    return { kind: "context", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine };
   }
   if (line.startsWith("-")) {
-    return { kind: "delete", content: line.slice(1), textSelector: "exact", unifiedDiff: true };
+    return { kind: "delete", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine };
   }
 
-  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use ' <context>', '-<old>', '+<new>', or locator operations.`, { inputLine });
+  throw new InvalidPatchError("Malformed patch operation. Use context, delete, insert, or locator row.", { inputLine });
 }
 
 function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
   if (line.startsWith("+")) {
     const content = line.slice(1);
-    return { kind: "insert", hash: hashFn(content), content };
+    return { kind: "insert", hash: hashFn(content), content, inputLine };
   }
   if (line.startsWith("=") || line.startsWith(" ")) {
     return parseSelectorPatchOp("context", line.slice(1), line, inputLine);
@@ -187,18 +191,18 @@ function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): Pa
     return parseSelectorPatchOp("delete", line.slice(1), line, inputLine);
   }
 
-  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use ' :<text>', ' ^<prefix>', ' *<needle>', ' ?{...}', ' $<suffix>', '-:<text>', '-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '+<text>', ' #<hash>', '-#<hash>', ' ...', or '-...'.`, { inputLine });
+  throw new InvalidPatchError("Malformed patch operation. Use context, delete, insert, or locator row.", { inputLine });
 }
 
 function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
   if (kind === "context" && selector === "") {
-    return { kind, content: "", textSelector: "exact" };
+    return { kind, content: "", textSelector: "exact", inputLine };
   }
   if (selector === "...") {
-    return { kind: "range", rangeKind: kind };
+    return { kind: "range", rangeKind: kind, inputLine };
   }
   if (selector.startsWith(":")) {
-    return { kind, content: selector.slice(1), textSelector: "exact" };
+    return { kind, content: selector.slice(1), textSelector: "exact", inputLine };
   }
   if (selector.startsWith("#")) {
     return parseHashPatchOp(kind, selector.slice(1), line, inputLine);
@@ -221,38 +225,34 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
 
 
 
-function throwRawTextSelectorError(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): never {
-  const suggestedExactSelector = kind === "context" ? ` :${selector}` : `-:${selector}`;
-  throw new InvalidPatchError(
-    `Raw ${kind} row detected: '${line}'. Rows use <operator><locator>; use exact locator '${suggestedExactSelector}', or one of ${kind === "context" ? "' ^<prefix>', ' *<needle>', ' ?{...}', ' $<suffix>', ' #<hash>', or ' ...'" : "'-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '-#<hash>', or '-...'"}.`,
-    { inputLine }
-  );
+function throwRawTextSelectorError(kind: MatchPatchOpKind, _selector: string, _line: string, inputLine: number): never {
+  throw new InvalidPatchError(`Raw ${kind} row. Add a locator marker.`, { inputLine });
 }
 
-function parsePrefixPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
+function parsePrefixPatchOp(kind: MatchPatchOpKind, content: string, _line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} prefix operation '${line}'. Prefix selectors require non-empty text after '^'.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} prefix locator. Expected non-empty text after ^.`, { inputLine });
   }
-  return { kind, content, textSelector: "prefix" };
+  return { kind, content, textSelector: "prefix", inputLine };
 }
 
-function parseContainsPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
+function parseContainsPatchOp(kind: MatchPatchOpKind, content: string, _line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} contains operation '${line}'. Contains selectors require non-empty text after '*'.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} contains locator. Expected non-empty text after *.`, { inputLine });
   }
-  return { kind, content, textSelector: "contains" };
+  return { kind, content, textSelector: "contains", inputLine };
 }
 
-function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, line: string, inputLine: number): MatchPatchOp {
+function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, _line: string, inputLine: number): MatchPatchOp {
   let value: unknown;
   try {
     value = JSON.parse(jsonText);
   } catch {
-    throw new InvalidPatchError(`Malformed ${kind} combined selector operation '${line}'. Combined selectors require valid JSON after '?'.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} combined locator. Expected valid JSON after ?.`, { inputLine });
   }
 
   try {
-    return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined selector operation '${line}'. Combined selector`) };
+    return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined locator. Combined selector`), inputLine };
   } catch (error) {
     throw annotatePatchErrorLocation(error, { inputLine });
   }
@@ -266,7 +266,7 @@ export function normalizeCombinedTextSelector(value: unknown, description = "Com
   const allowedKeys = new Set(["prefix", "contains", "suffix"]);
   for (const key of Object.keys(value)) {
     if (!allowedKeys.has(key)) {
-      throw new InvalidPatchError(`${description} has unknown key '${key}'.`);
+      throw new InvalidPatchError(`${description} has unknown key.`);
     }
   }
 
@@ -288,7 +288,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 function parseOptionalCombinedString(value: unknown, key: "prefix" | "suffix", description: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new InvalidPatchError(`${description} '${key}' must be a non-empty string.`);
+    throw new InvalidPatchError(`${description} ${key} must be a non-empty string.`);
   }
   return value;
 }
@@ -297,28 +297,28 @@ function parseOptionalCombinedContains(value: unknown, description: string): str
   if (value === undefined) return undefined;
   if (typeof value === "string") {
     if (value.length === 0) {
-      throw new InvalidPatchError(`${description} 'contains' must be a non-empty string or non-empty array of non-empty strings.`);
+      throw new InvalidPatchError(`${description} contains must be a non-empty string or non-empty array of non-empty strings.`);
     }
     return [value];
   }
   if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== "string" || item.length === 0)) {
-    throw new InvalidPatchError(`${description} 'contains' must be a non-empty string or non-empty array of non-empty strings.`);
+    throw new InvalidPatchError(`${description} contains must be a non-empty string or non-empty array of non-empty strings.`);
   }
   return value;
 }
 
-function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
+function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, _line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} suffix operation '${line}'. Suffix selectors require non-empty text after '$'.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} suffix locator. Expected non-empty text after $.`, { inputLine });
   }
-  return { kind, content, textSelector: "suffix" };
+  return { kind, content, textSelector: "suffix", inputLine };
 }
 
-function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string, inputLine: number): MatchPatchOp {
+function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, _line: string, inputLine: number): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be 3 or 4 base64url characters after '${kind === "context" ? " #" : "-#"}'.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 3 or 4 base64url characters after #.`, { inputLine });
   }
-  return { kind, hash };
+  return { kind, hash, inputLine };
 }
 
 function patchInputLine(index: number, lineOffset: number): number {

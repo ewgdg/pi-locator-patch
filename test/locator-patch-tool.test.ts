@@ -274,6 +274,25 @@ describe("patch visible status", () => {
     await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("first");
   });
 
+  it("reports stale hunk failures by patch line without echoing locator text", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "a.txt"), "present");
+    const longLocator = "missing locator text that should not be repeated";
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      `-:${longLocator}`,
+      "+replacement",
+      "*** End Patch"
+    ].join("\n");
+
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_STALE_HUNK] Line 4: Hunk 1 not found.");
+    expect(message).not.toContain("match pattern");
+    expect(message).not.toContain(longLocator);
+  });
+
   it("keeps earlier aliased Delete File success and writes failed-tail retry patch", async () => {
     const dir = await makeTempDir();
     const target = join(dir, "doomed.txt");

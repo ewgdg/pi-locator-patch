@@ -119,7 +119,7 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
 
   if (matchPattern.length === 0) {
     if (hunk.anchorHint) {
-      throw new UnsupportedHunkError(`Hunk ${hunkIndex} anchor hint requires at least one context/deletion locator.`);
+      throw new UnsupportedHunkError(`Hunk ${hunkIndex} anchor hint requires at least one context/deletion locator.`, hunkErrorLocation(hunk));
     }
     if (lines.length === 0 && hunk.ops.every((op) => op.kind === "insert")) {
       const insertedHashes = hunk.ops.map((op) => hashFn(op.content));
@@ -145,7 +145,7 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
         }
       };
     }
-    throw new UnsupportedHunkError(`Hunk ${hunkIndex} has no context/deletion locators; pure insertion requires an empty file.`);
+    throw new UnsupportedHunkError(`Hunk ${hunkIndex} has no context/deletion locators; pure insertion requires an empty file.`, hunkErrorLocation(hunk));
   }
 
   validateSparseRanges(hunk, hunkIndex);
@@ -158,12 +158,10 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
     ? findSparseMatches(currentEntries, hunk.ops, 2, searchStart, searchEnd)
     : findContiguousMatches(currentEntries, matchOps, searchStart, searchEnd).map((start) => contiguousMatchToSparseMatch(hunk.ops, start));
   if (matches.length === 0) {
-    throw new StaleHunkError(`Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} was not found${renderAnchorSearchScope(hunk)}.`);
+    throw new StaleHunkError(`Hunk ${hunkIndex} not found${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
   }
   if (matches.length > 1) {
-    throw new AmbiguousHunkError(
-      `Hunk ${hunkIndex} match pattern ${matchPattern.join(" ")} matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`
-    );
+    throw new AmbiguousHunkError(`Hunk ${hunkIndex} matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
   }
 
   const match = matches[0];
@@ -304,6 +302,14 @@ function buildMatchPattern(hunk: Hunk): string[] {
   });
 }
 
+function hunkErrorLocation(hunk: Hunk): { inputLine?: number } | undefined {
+  return { inputLine: hunk.ops.find(isMatchOp)?.inputLine ?? hunk.inputLine };
+}
+
+function patchErrorLocation(source: Hunk | Hunk["ops"][number], fallback?: Hunk): { inputLine?: number } | undefined {
+  return { inputLine: source.inputLine ?? fallback?.inputLine };
+}
+
 function buildMatcherKinds(hunk: Hunk): PatchMatcherKind[] {
   return hunk.ops.flatMap((op) => {
     if (op.kind === "insert") return [];
@@ -341,7 +347,7 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
     const previousAnchorOp = findNearestMatchOp(hunk.ops, opIndex, -1);
     const nextAnchorOp = findNearestMatchOp(hunk.ops, opIndex, 1);
     if (!previousAnchorOp || !nextAnchorOp) {
-      throw new UnsupportedHunkError(`Hunk ${hunkIndex} '${renderRangeLocator(op.rangeKind)}' must be between context/deletion operations.`);
+      throw new UnsupportedHunkError(`Hunk ${hunkIndex} range must be between context/deletion operations.`, patchErrorLocation(op, hunk));
     }
   }
 }
@@ -349,20 +355,20 @@ function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {
 function validateHunkAnchorHint(hunk: Hunk, hunkIndex: number): void {
   if (!hunk.anchorHint) return;
   if (!Number.isSafeInteger(hunk.anchorHint.line) || hunk.anchorHint.line < 1) {
-    throw new InvalidPatchError(`Hunk ${hunkIndex} anchor hint line must be a safe positive integer.`);
+    throw new InvalidPatchError(`Hunk ${hunkIndex} anchor hint line must be a safe positive integer.`, patchErrorLocation(hunk));
   }
   if (hunk.anchorHint.endLine !== undefined && (!Number.isSafeInteger(hunk.anchorHint.endLine) || hunk.anchorHint.endLine < 1 || hunk.anchorHint.line > hunk.anchorHint.endLine)) {
-    throw new InvalidPatchError(`Hunk ${hunkIndex} anchor hint range must use safe positive integers with start less than or equal to end.`);
+    throw new InvalidPatchError(`Hunk ${hunkIndex} anchor hint range must use safe positive integers with start less than or equal to end.`, patchErrorLocation(hunk));
   }
 }
 
 function validateNoConflictingLocators(hunk: Hunk, hunkIndex: number): void {
   for (const op of hunk.ops) {
     if (isMatchOp(op) && op.hash !== undefined && (op.content !== undefined || op.combinedSelector !== undefined)) {
-      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported; use hash-only ( #HASH/-#HASH, 3 or 4 chars) or text-only ( :text/-:text,  ^prefix/-^prefix,  *needle/-*needle,  ?{...}/-?{...}, or  $suffix/-$suffix).`);
+      throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported. Use hash-only or text-only locator.`, patchErrorLocation(op, hunk));
     }
     if (isMatchOp(op) && op.content !== undefined && op.combinedSelector !== undefined) {
-      throw new InvalidPatchError(`Hunk ${hunkIndex} mixed text locators are not supported; use exactly one text locator form ( :text/-:text,  ^prefix/-^prefix,  *needle/-*needle,  ?{...}/-?{...}, or  $suffix/-$suffix).`);
+      throw new InvalidPatchError(`Hunk ${hunkIndex} mixed text locators are not supported. Use exactly one text locator form.`, patchErrorLocation(op, hunk));
     }
     if (isMatchOp(op) && op.combinedSelector !== undefined) {
       op.combinedSelector = normalizeCombinedTextSelector(op.combinedSelector, `Hunk ${hunkIndex} combined selector`);

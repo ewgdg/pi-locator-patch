@@ -71,7 +71,7 @@ describe("universal patch parser", () => {
 
   it("rejects add body lines without Codex plus prefixes", () => {
     const patch = ["*** Begin Patch", "*** Add File: added.txt", "missing prefix", "*** End Patch"].join("\n");
-    expect(() => parseUniversalPatch(patch)).toThrow("Line 3: Add File body lines must start with '+'.");
+    expect(() => parseUniversalPatch(patch)).toThrow("Line 3: Add File body lines must start with +.");
   });
 
   it("rejects delete sections with body lines", () => {
