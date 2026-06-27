@@ -130,12 +130,8 @@ describe("applyPatchToText", () => {
     expect(result.hunkAudits[0].matchPattern).toEqual([" :a", " :", "-:old", " :z"]);
   });
 
-  it("falls back to unified exact matching when locator matching finds no span", () => {
-    const result = applyPatchToText("^literal\n#abc", patch(" ^literal", "-#abc", "+done"));
-
-    expect(result.text).toBe("^literal\ndone");
-    expect(result.hunkAudits[0].matcherKinds).toEqual(["unifiedDiff", "unifiedDiff"]);
-    expect(result.hunkAudits[0].matchPattern).toEqual([" :^literal", "-:#abc"]);
+  it("does not retry with unified exact matching when locator matching finds no span", () => {
+    expect(() => applyPatchToText("^literal\n#abc", patch(" ^literal", "-#abc", "+done"))).toThrow(StaleHunkError);
   });
 
   it("uses hunk anchor hints as lower-bound search starts for contiguous matches", () => {

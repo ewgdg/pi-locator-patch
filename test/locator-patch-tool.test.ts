@@ -61,11 +61,12 @@ describe("patch visible status", () => {
     expect(description).toMatch(/^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}\*\*\* End Patch/m);
   });
 
-  it("teaches prefix locators as the default choice", () => {
+  it("teaches prefix and suffix locators before exact locators", () => {
     const description = patchParameterDescription();
 
-    expect(description).toContain("Use the shortest prefix locator (`^<prefix>`)");
+    expect(description).toContain("Use the shortest prefix (`^<prefix>`) or suffix locator");
     expect(description.indexOf('"^" specifies a prefix locator.')).toBeLessThan(description.indexOf('":" specifies an exact text locator.'));
+    expect(description).toContain('"$" specifies a suffix locator.');
     expect(description).toMatch(/^ {4}@@\n {4}-\^o\n {4}\+new text\n {4}\*\*\* End Patch/m);
   });
 

@@ -90,7 +90,6 @@ Rules:
 - ` ...` preserves every target line between the nearest surrounding context operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context operations. Add `+` lines after it to replace that range.
 - Hunks without ellipsis must match exactly one contiguous span in current target file. Hunks with ellipsis must match exactly one sparse span.
-- Zero matches trigger one unified-diff exact retry using the raw text after each context/delete operator. If the retry also has zero matches, the hunk is stale. More than one match = ambiguous hunk.
 - Pure insertion has empty match sequence and is supported only when target file has zero logical lines; hunk anchor hints are rejected on pure insert hunks because there is no resolved match start.
 
 ### Blank line operations

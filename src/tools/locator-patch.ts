@@ -49,13 +49,12 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   The syntax for line matcher is \`<operator><locator_marker>[<locator_value>]\`.
   Line matches in a hunk section are grouped to form a hunk match.
   #### Locator Choice Policy
-  Use the shortest prefix locator (\`^<prefix>\`) that uniquely identifies the target line in its hunk context.
-  Use exact text locators (\`:<text>\`) only for short lines, whitespace-significant lines, or when a prefix would be ambiguous.
+  Use the shortest prefix (\`^<prefix>\`) or suffix locator that uniquely identifies the target line in its hunk context.
+  Use exact text locators (\`:<text>\`) only for short lines, whitespace-significant lines, or when a prefix or suffix locator would be ambiguous.
   Use hash locators (\`#<hash>\`) when read_hash supplied a hash and exact line identity matters.
   #### Caveats
   Locator rows are preferred, but malformed unified-diff muscle memory is tolerated.
   A context/delete row without a locator marker is parsed as unified diff: text after \` \`, \`=\`, or \`-\` is exact line content.
-  If matching finds zero spans, the hunk retries once with every context/delete row treated as unified-diff exact text.
   Only \`Update File\` section can have hunk match.
   #### Match Operators
   Match operator (\`<operator>\`) can be either "-" or a literal space " ".

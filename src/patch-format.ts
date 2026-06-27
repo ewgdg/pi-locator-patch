@@ -43,7 +43,6 @@ export interface HunkAnchorHint {
 export interface Hunk {
   anchorHint?: HunkAnchorHint;
   ops: PatchOp[];
-  unifiedFallbackOps?: PatchOp[];
 }
 
 export interface Patch {
@@ -86,12 +85,11 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, l
       index += 1;
     }
 
-    const parsedHunk = parseHunkOperationLines(opLines, hashFn);
-    const ops = parsedHunk.ops;
+    const ops = parseHunkOperationLines(opLines, hashFn);
     if (ops.length === 0) {
       throw new InvalidPatchError("Hunk must contain at least one operation.", { inputLine: hunkHeaderLine });
     }
-    hunks.push({ ...(anchorHint ? { anchorHint } : {}), ops, ...(parsedHunk.unifiedFallbackOps ? { unifiedFallbackOps: parsedHunk.unifiedFallbackOps } : {}) });
+    hunks.push({ ...(anchorHint ? { anchorHint } : {}), ops });
   }
 
   if (hunks.length === 0) {
@@ -107,13 +105,12 @@ interface PatchOperationLine {
   inputLine: number;
 }
 
-function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction): Pick<Hunk, "ops" | "unifiedFallbackOps"> {
-  return {
-    ops: opLines.map((opLine) => hasMissingLocatorMarker(opLine.line)
+function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction): PatchOp[] {
+  return opLines.map((opLine) =>
+    hasMissingLocatorMarker(opLine.line)
       ? parseUnifiedDiffOp(opLine.line, hashFn, opLine.inputLine)
-      : parsePatchOp(opLine.line, hashFn, opLine.inputLine)),
-    unifiedFallbackOps: opLines.map((opLine) => parseUnifiedDiffOp(opLine.line, hashFn, opLine.inputLine))
-  };
+      : parsePatchOp(opLine.line, hashFn, opLine.inputLine)
+  );
 }
 
 const HUNK_HEADER_PATTERN = /^@@(?: @([1-9]\d*)(?:\.\.\.([1-9]\d*))?)?$/;

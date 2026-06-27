@@ -72,7 +72,7 @@ Locators:
 Hash prefix locator `#<hash>` also exists for rare fallback cases. Prefer text locators because they are readable and avoid hash collision ambiguity.
 Context rows normally start with a literal space; legacy `=` context rows are accepted. Use ` :` or `=:` for exact text, including indented lines.
 
-Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` `, `=`, or `-` as exact line content. If locator matching finds zero spans, the hunk retries once with every context/delete row treated as unified-diff exact text. Multiple matches still fail as ambiguous.
+Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` `, `=`, or `-` as exact line content. Locator matching runs once; zero matches are stale and multiple matches are ambiguous.
 
 ### Output and failure behavior
 

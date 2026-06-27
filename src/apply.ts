@@ -113,18 +113,6 @@ function renderPatchReceiptLine(line: PatchReceiptLine): string {
 }
 
 function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {
-  try {
-    return applyHunkStrict(lines, hunk, hunkIndex, hashFn);
-  } catch (error) {
-    if (!(error instanceof StaleHunkError) || hunk.unifiedFallbackOps === undefined) {
-      throw error;
-    }
-
-    return applyHunkStrict(lines, { ...hunk, ops: hunk.unifiedFallbackOps, unifiedFallbackOps: undefined }, hunkIndex, hashFn);
-  }
-}
-
-function applyHunkStrict(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {
   validateHunkAnchorHint(hunk, hunkIndex);
   validateNoConflictingLocators(hunk, hunkIndex);
   const matchPattern = buildMatchPattern(hunk);
