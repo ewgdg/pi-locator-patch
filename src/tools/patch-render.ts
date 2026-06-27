@@ -204,7 +204,7 @@ export function buildPatchResultRenderText(options: {
   }
 
   if (isError) {
-    const errorText = firstLine(resultText) ?? "Patch failed";
+    const errorText = formatPatchErrorResultText(resultText);
     const preview = formatPatchErrorInputPreview(errorInput, expanded, theme, errorText);
     return [theme.fg("error", errorText), preview].filter((part): part is string => Boolean(part)).join("\n");
   }
@@ -388,6 +388,26 @@ function splitInputLines(text: string): string[] {
 
 function firstLine(text: string | undefined): string | undefined {
   return text?.split("\n", 1)[0];
+}
+
+function formatPatchErrorResultText(resultText: string | undefined): string {
+  if (!resultText?.startsWith("[E_PARTIAL_PATCH]")) {
+    return firstLine(resultText) ?? "Patch failed";
+  }
+
+  const lines = resultText.split("\n");
+  const failedSection = extractPatchErrorSection(lines, "Failed:", ["Skipped:", "Retry patch:"]);
+  const retryPatchLine = lines.find((line) => line.startsWith("Retry patch:"));
+  return [lines[0], failedSection, retryPatchLine].filter((part): part is string => Boolean(part)).join("\n");
+}
+
+function extractPatchErrorSection(lines: readonly string[], startMarker: string, endMarkers: readonly string[]): string | undefined {
+  const startIndex = lines.indexOf(startMarker);
+  if (startIndex === -1) {
+    return undefined;
+  }
+  const endIndex = lines.findIndex((line, index) => index > startIndex && endMarkers.includes(line));
+  return lines.slice(startIndex, endIndex === -1 ? undefined : endIndex).join("\n");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

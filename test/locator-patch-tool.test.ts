@@ -336,6 +336,21 @@ describe("patch visible status", () => {
     await expect(stat(join(dir, "created.txt"))).resolves.toBeTruthy();
   });
 
+  it("writes a raw retry patch when syntax parsing fails", async () => {
+    const dir = await makeTempDir();
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      "old raw context"
+    ].join("\n");
+
+    const message = await rejectionMessage(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never));
+    expect(message).toContain("[E_INVALID_PATCH]");
+    expect(message).toContain("Retry patch:");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe(patch);
+  });
+
   it("dry_run validates the whole patch without writing earlier valid operations", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "one.txt"), "old");

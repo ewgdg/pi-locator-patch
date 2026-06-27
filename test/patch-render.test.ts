@@ -180,6 +180,34 @@ describe("patch renderer helpers", () => {
     ).toBe("<success>*** Update File: file.txt</success>");
   });
 
+  it("brings partial patch failure details before the input preview", () => {
+    const rendered = buildPatchResultRenderText({
+      resultText: [
+        "[E_PARTIAL_PATCH] Patch stopped after 0 applied operations.",
+        "Applied:",
+        "(none)",
+        "Failed:",
+        "*** Update File: src/file.ts",
+        "[E_STALE_HUNK] Could not find hunk match.",
+        "Skipped:",
+        "(none)",
+        "Retry patch: /tmp/pi-locator-patch-abc/retry.patch"
+      ].join("\n"),
+      details: undefined,
+      expanded: false,
+      isPartial: false,
+      isError: true,
+      errorInput: { patch: "*** Begin Patch\n*** Update File: src/file.ts\n@@\n-old\n+new\n*** End Patch" },
+      theme
+    });
+
+    expect(rendered).toContain("Failed:\n*** Update File: src/file.ts\n[E_STALE_HUNK] Could not find hunk match.");
+    expect(rendered).toContain("Retry patch: /tmp/pi-locator-patch-abc/retry.patch");
+    expect(rendered.indexOf("Failed:")).toBeLessThan(rendered.indexOf("Agent input preview"));
+    expect(rendered).not.toContain("Applied:\n(none)");
+    expect(rendered).not.toContain("Skipped:\n(none)");
+  });
+
   it("renders error with input preview centered on reported line", () => {
     const patch = [
       "*** Begin Patch",

@@ -340,7 +340,7 @@ export const patchTool = defineTool({
     }
 
     const patchText = await readPatchInput(params.patch, params.patch_file, ctx.cwd);
-    const universalPatch = parsePatchInput(patchText);
+    const universalPatch = await parsePatchInputWithRetryPatch(patchText);
     const dryRun = params.dry_run ?? false;
 
     if (dryRun) {
@@ -436,6 +436,20 @@ async function readPatchInput(patch: string | undefined, patchFile: string | und
   const patchFilePath = resolveToolPath(cwd, patchFile ?? "");
   const { text } = await readExistingTextFile(patchFilePath);
   return text;
+}
+
+async function parsePatchInputWithRetryPatch(patchText: string) {
+  try {
+    return parsePatchInput(patchText);
+  } catch (error) {
+    if (!(error instanceof InvalidPatchError)) {
+      throw error;
+    }
+    const retryPatchPath = await writeRawRetryPatch(patchText);
+    const retryableError = new InvalidPatchError(`${error.detail}\nRetry patch: ${retryPatchPath}`, error.location);
+    Object.assign(retryableError, { retryPatchPath });
+    throw retryableError;
+  }
 }
 
 async function applyOperationSequentially(cwd: string, operation: UniversalPatchOperation): Promise<PlannedFileChange> {
@@ -563,6 +577,13 @@ async function writeRetryPatch(operations: readonly UniversalPatchOperation[]): 
   const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
   await writeRawFile(retryPatchPath, serializeUniversalPatch(operations), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  return retryPatchPath;
+}
+
+async function writeRawRetryPatch(patchText: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+  const retryPatchPath = join(directory, "retry.patch");
+  await writeRawFile(retryPatchPath, patchText, { encoding: "utf8", mode: 0o600, flag: "wx" });
   return retryPatchPath;
 }
 
