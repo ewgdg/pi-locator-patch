@@ -49,7 +49,10 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   The syntax for line matcher is \`<operator><locator_marker>[<locator_value>]\`.
   Line matches in a hunk section are grouped to form a hunk match.
   #### Locator Choice Policy
-  Use the shortest prefix (\`^<prefix>\`) or suffix locator that uniquely identifies the target line in its hunk context.
+  <important>Token efficiency is the highest priority.</important>
+  Use the shortest prefix or suffix or contains locator that uniquely identifies the target line in its hunk context. 
+  Use line anchor to disambiguate when the line offset is available.
+  Use range locator whenever possible for range selection.
   Use exact text locators (\`:<text>\`) only for short lines, whitespace-significant lines, or when a prefix or suffix locator would be ambiguous.
   Use hash locators (\`#<hash>\`) when read_hash supplied a hash and exact line identity matters.
   #### Caveats
