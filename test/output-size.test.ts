@@ -74,7 +74,7 @@ describe("tool output size guards", () => {
     await expect(readFile(file, "utf8")).resolves.toBe(hugeReplacement);
   });
 
-  it("writes patch result without emitting inserted rows in status", async () => {
+  it("writes patch result and falls back to compact status instead of overlarge inserted rows", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");

@@ -2,11 +2,32 @@
 
 Pi extension for token-efficient file edits using explicit locator patches.
 
-The package registers `patch` for multi-file add/update/delete patch application.
+The package registers `read_hash` for line reads and `patch` for multi-file add/update/delete patch application.
 
-Core design: keep patches short while staying exact. Use the shortest unique locator that explains the target, such as prefix/contains/suffix locators instead of full-line text, and `=...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
+Core design: keep patches short while staying exact. Use concise locators and `=...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
 
-On session start, the extension removes mutable built-in tools (`edit`, `write`) and old locator tool names.
+On session start, the extension removes mutable built-in tools (`edit`, `write`) and old locator tool names. Built-in `read` remains active unless hash mode is explicitly enabled.
+
+## Hash mode opt-in
+
+Hash mode makes `read_hash` the only read path and changes patch success output to a compact hash receipt.
+
+Enable in `settings.json`:
+
+```json
+{
+  "locatorPatch": {
+    "hashMode": true
+  }
+}
+```
+
+Quick switch for testing:
+
+```bash
+PI_LOCATOR_PATCH_HASH_MODE=1 pi   # force hash mode
+PI_LOCATOR_PATCH_HASH_MODE=0 pi   # force default mode
+```
 
 ## `patch`
 
@@ -69,24 +90,27 @@ Locators:
 - `?{...}` combined JSON locator with `prefix`, `contains`, and/or `suffix`.
 - `...` range between surrounding matchers: `=...` preserves, `-...` deletes.
 
-Hash prefix locator `#<hash>` also exists for rare fallback cases. Prefer text locators because they are readable and avoid hash collision ambiguity.
+Hash prefix locator `#<hash>` is preferred in hash mode when `read_hash` supplies a visible hash. Use text locators when a line has no visible hash or when content predicates are clearer.
 Context rows normally start with a literal space; legacy `=` context rows are accepted. Use ` :` or `=:` for exact text, including indented lines.
 
 Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` `, `=`, or `-` as exact line content. Locator matching runs once; zero matches are stale and multiple matches are ambiguous.
 
 ### Output and failure behavior
 
-Success output is compact status only:
+With hash mode enabled, success output is a compact hash-only receipt. Context rows show only hashes, inserted rows show `+HASH`, and deleted rows are omitted:
 
 ```text
 *** Add File: new.txt
-Applied
+@@ add file @@
++9Nrk
 *** Update File: existing.txt
-Applied
+@@ matched line 12 @@
+ Abc1
++Z9xQ
 *** Delete File: old.txt
 Deleted file
 ```
 
-Dry runs return `Validated` instead of writing.
+If this receipt is too large, output falls back to compact status rows. Dry runs return the same receipt shape without writing. Without hash mode, success output is compact status rows only.
 
 File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a **retry patch** file containing the unapplied operations. Agents can later reuse the retry patch file to avoid re-emitting large output tokens.

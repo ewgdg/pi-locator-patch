@@ -1,12 +1,19 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hashLine, parseText } from "../src/api.js";
 import { patchTool } from "../src/tools/locator-patch.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+const makePlainTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+async function makeTempDir() {
+  const dir = await makePlainTempDir();
+  await mkdir(join(dir, ".pi"));
+  await writeFile(join(dir, ".pi", "settings.json"), JSON.stringify({ locatorPatch: { hashMode: true } }));
+  return dir;
+}
 const row = (prefix: "=" | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
+const hashContext = (content: string) => ` ${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
   if (content.type !== "text") {
@@ -61,28 +68,37 @@ describe("patch visible status", () => {
     expect(description).toMatch(/^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}\*\*\* End Patch/m);
   });
 
-  it("teaches prefix and suffix locators before exact locators", () => {
+  it("teaches hash locators before text locators", () => {
     const description = patchParameterDescription();
 
-    expect(description).toContain("Use the shortest prefix (`^<prefix>`) or suffix locator");
+    expect(description).toContain("Prefer hash locators (`#<hash>`) when hash is already given.");
     expect(description.indexOf('"^" specifies a prefix locator.')).toBeLessThan(description.indexOf('":" specifies an exact text locator.'));
     expect(description).toContain('"$" specifies a suffix locator.');
     expect(description).toMatch(/^ {4}@@\n {4}-\^o\n {4}\+new text\n {4}\*\*\* End Patch/m);
   });
 
-  it("is agent-visible as compact status without hashes or file content", async () => {
+  it("is agent-visible as a hash receipt with context and inserted lines only", async () => {
     const diff = ["@@", row("=", "a"), row("-", "old"), row("+", "new"), row("=", "z")].join("\n");
 
     const { file, result } = await patchFile("a\nold\nz\n", diff);
 
     expect(patchTool.name).toBe("patch");
-    expect(resultText(result)).toBe(["*** Update File: file.txt", "Applied"].join("\n"));
+    expect(resultText(result)).toBe(["*** Update File: file.txt", "@@ matched line 1 @@", hashContext("a"), `+${hashLine("new")}`, hashContext("z")].join("\n"));
     expect(resultText(result)).not.toContain(hashLine("old"));
-    expect(resultText(result)).not.toContain(hashLine("a"));
-    expect(resultText(result)).not.toContain(hashLine("new"));
     expect(resultText(result)).not.toContain("old");
-    expect(resultText(result)).not.toContain("new");
     await expect(readFile(file, "utf8")).resolves.toBe("a\nnew\nz\n");
+  });
+
+  it("keeps compact status by default when hash mode is not configured", async () => {
+    const dir = await makePlainTempDir();
+    const file = join(dir, "file.txt");
+    await writeFile(file, "old");
+    const patch = ["*** Begin Patch", "*** Update File: file.txt", "@@", row("-", "old"), row("+", "new"), "*** End Patch"].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
+
+    expect(resultText(result)).toBe(["*** Update File: file.txt", "Applied"].join("\n"));
+    await expect(readFile(file, "utf8")).resolves.toBe("new");
   });
 
   it("applies update hunks with text-only locators", async () => {
@@ -90,7 +106,7 @@ describe("patch visible status", () => {
 
     const { file, result } = await patchFile("a\nold\nz\n", diff);
 
-    expect(resultText(result)).toBe(["*** Update File: file.txt", "Applied"].join("\n"));
+    expect(resultText(result)).toContain(`+${hashLine("new")}`);
     await expect(readFile(file, "utf8")).resolves.toBe("a\nnew\nz\n");
   });
 
@@ -107,7 +123,7 @@ describe("patch visible status", () => {
     const { result } = await patchFile("old", universal);
 
     expect(resultText(result)).not.toContain("old");
-    expect(resultText(result)).not.toContain("new");
+    expect(resultText(result)).toContain(`+${hashLine("new")}`);
     expect(detailsDiff(result)).toContain("--- a/file.txt");
     expect(detailsDiff(result)).toContain("+++ b/file.txt");
     expect(detailsDiff(result)).toContain("-old");
@@ -138,15 +154,13 @@ describe("patch visible status", () => {
     expect(diff.split("\n")).toHaveLength(7);
   });
 
-  it("adds a new file from a universal Add File section and shows compact status", async () => {
+  it("adds a new file from a universal Add File section and shows inserted rows", async () => {
     const dir = await makeTempDir();
     const patch = ["*** Begin Patch", "*** Add File: added.txt", "+hello", "+world", "*** End Patch"].join("\n");
 
     const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
-    expect(resultText(result)).toBe(["*** Add File: added.txt", "Applied"].join("\n"));
-    expect(resultText(result)).not.toContain("hello");
-    expect(resultText(result)).not.toContain("world");
+    expect(resultText(result)).toBe(["*** Add File: added.txt", "@@ add file @@", `+${hashLine("hello")}`, `+${hashLine("world")}`].join("\n"));
     expect(detailsDiff(result)).toContain("--- /dev/null");
     expect(detailsDiff(result)).toContain("+++ b/added.txt");
     expect(detailsDiff(result)).toContain("+hello");
@@ -161,7 +175,7 @@ describe("patch visible status", () => {
 
     const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
-    expect(resultText(result)).toBe(["*** Add File: literal.txt", "Applied"].join("\n"));
+    expect(resultText(result)).toContain(`+${hashLine(literal)}`);
     await expect(readFile(join(dir, "literal.txt"), "utf8")).resolves.toBe(`${literal}\n${shortHashLiteral}`);
   });
 
@@ -183,7 +197,7 @@ describe("patch visible status", () => {
 
     expect(writtenText).toBe("\n");
     expect(parseText(writtenText).lines).toEqual([""]);
-    expect(resultText(result)).toBe(["*** Add File: blank.txt", "Applied"].join("\n"));
+    expect(resultText(result)).toBe(["*** Add File: blank.txt", "@@ add file @@", `+${hashLine("")}`].join("\n"));
     expect(detailsDiff(result).split("\n").at(-1)).toBe("+");
   });
 
@@ -196,7 +210,7 @@ describe("patch visible status", () => {
 
     expect(writtenText).toBe("hello\n\n");
     expect(parseText(writtenText).lines).toEqual(["hello", ""]);
-    expect(resultText(result)).toBe(["*** Add File: trailing.txt", "Applied"].join("\n"));
+    expect(resultText(result).split("\n").slice(-2)).toEqual([`+${hashLine("hello")}`, `+${hashLine("")}`]);
     expect(detailsDiff(result).split("\n").slice(-2)).toEqual(["+hello", "+"]);
   });
 
@@ -429,7 +443,7 @@ describe("patch visible status", () => {
     await expect(readFile(target, "utf8")).resolves.toBe("a\nb");
   });
 
-  it("omits oversized full-file statuses without exposing inserted content", async () => {
+  it("falls back to compact status when hash receipt has too many inserted rows", async () => {
     const manyLines = Array.from({ length: 2100 }, (_, index) => `line-${index}`);
     const universal = [
       "*** Begin Patch",
@@ -452,7 +466,7 @@ describe("patch visible status", () => {
 
     const { file, result } = await patchFile("only", diff);
 
-    expect(resultText(result)).toBe(["*** Update File: file.txt", "Applied"].join("\n"));
+    expect(resultText(result)).toBe(["*** Update File: file.txt", "@@ matched line 1 @@"].join("\n"));
     await expect(readFile(file, "utf8")).resolves.toBe("");
   });
 });

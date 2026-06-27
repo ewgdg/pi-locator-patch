@@ -6,7 +6,8 @@ import { defineTool, withFileMutationQueue } from "@earendil-works/pi-coding-age
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
-import { renderPatchTranscriptDiffs, type PatchTranscriptDiffInput } from "../content-diff.js";
+import { readLocatorPatchConfig } from "../config.js";
+import { renderPatchHashReceiptDiffs, renderPatchTranscriptDiffs, type PatchTranscriptDiffInput } from "../content-diff.js";
 import { FileTextError, InvalidPatchError, PartialPatchError } from "../errors.js";
 import {
   assertExistingTextFileMutationTarget,
@@ -50,11 +51,11 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   Line matches in a hunk section are grouped to form a hunk match.
   #### Locator Choice Policy
   <important>Token efficiency is the highest priority.</important>
-  Use the shortest prefix or suffix or contains locator that uniquely identifies the target line in its hunk context. 
-  Use line anchor to disambiguate when the line offset is available.
+  Prefer hash locators (\`#<hash>\`) when hash is already given.
+  Otherwise use the shortest prefix or suffix or contains locator that uniquely identifies the target line in its hunk context.
+  Use line anchor to disambiguate only if the latest accurate line offset is available and earlier hunks in the same file operation will not shift it.
   Use range locator whenever possible for range selection.
   Use exact text locators (\`:<text>\`) only for short lines, whitespace-significant lines, or when a prefix or suffix locator would be ambiguous.
-  Use hash locators (\`#<hash>\`) when read_hash supplied a hash and exact line identity matters.
   #### Caveats
   Locator rows are preferred, but malformed unified-diff muscle memory is tolerated.
   A context/delete row without a locator marker is parsed as unified diff: text after \` \`, \`=\`, or \`-\` is exact line content.
@@ -318,11 +319,7 @@ export const patchTool = defineTool({
   label: "Locator Patch",
   description: "Token-efficient tool for editing files with multi-file-capable add/update/delete patches.",
   promptSnippet: "Prefer for normal token-efficient file edits; supports multi-file changes in one patch call.",
-  promptGuidelines: [
-    "Prefer `patch` tool over other text-replacement-based editing.",
-    "During non-dry `patch` tool failures, the tool stops at the failed operation and writes a retry patch file containing unapplied operations. For large patches, save output tokens by editing the retry patch file and passing it via `patch_file` instead of re-emitting large patch text.",
-    "On `patch` tool success, agent-visible output is compact file status only."
-  ],
+  promptGuidelines: buildPatchPromptGuidelines(false),
   parameters: Type.Object(
     {
       patch: Type.Optional(
@@ -347,7 +344,7 @@ export const patchTool = defineTool({
     const dryRun = params.dry_run ?? false;
 
     if (dryRun) {
-      return buildPatchToolResult(await planFileChangesForDryRun(ctx.cwd, universalPatch.operations), true);
+      return buildPatchToolResult(await planFileChangesForDryRun(ctx.cwd, universalPatch.operations), true, await isHashModeEnabled(ctx));
     }
 
     const plannedChanges: PlannedFileChange[] = [];
@@ -379,7 +376,7 @@ export const patchTool = defineTool({
       }
     }
 
-    return buildPatchToolResult(plannedChanges, false);
+    return buildPatchToolResult(plannedChanges, false, await isHashModeEnabled(ctx));
   },
   renderCall(_args, theme, context) {
     return new Text(
@@ -410,6 +407,21 @@ export const patchTool = defineTool({
     );
   }
 });
+
+export function setPatchToolHashModeGuideline(hashMode: boolean): void {
+  patchTool.promptGuidelines = buildPatchPromptGuidelines(hashMode);
+}
+
+function buildPatchPromptGuidelines(hashMode: boolean): string[] {
+  const guidelines = [
+    "Prefer `patch` tool over other text-replacement-based editing.",
+    "During non-dry `patch` tool failures, the tool stops at the failed operation and writes a retry patch file containing unapplied operations. Try fixing the retry patch file first and passing it via `patch_file` instead of re-emitting large patch text to save tokens."
+  ];
+  if (hashMode) {
+    guidelines.push("Hash mode active: use `read_hash` for text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes, and omitted deleted rows.");
+  }
+  return guidelines;
+}
 
 async function readPatchInput(patch: string | undefined, patchFile: string | undefined, cwd: string): Promise<string> {
   const hasInlinePatch = typeof patch === "string";
@@ -603,8 +615,12 @@ function formatCause(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryRun: boolean) {
-  const status = buildPatchStatusDecision(plannedChanges, dryRun);
+async function isHashModeEnabled(ctx: { cwd: string; isProjectTrusted?: () => boolean }): Promise<boolean> {
+  return (await readLocatorPatchConfig(ctx.cwd, ctx.isProjectTrusted?.() ?? true)).hashMode;
+}
+
+function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryRun: boolean, hashMode: boolean) {
+  const status = buildPatchStatusDecision(plannedChanges, dryRun, hashMode);
   return {
     content: [{ type: "text" as const, text: status.text }],
     details: {
@@ -682,14 +698,12 @@ function serializeAddFileText(operation: AddFileOperation): string {
 }
 
 
-function buildPatchStatusDecision(plannedChanges: readonly PlannedFileChange[], dryRun: boolean): PatchStatusDecision {
-  const renderedStatus = renderUniversalPatchStatus(plannedChanges, dryRun);
-  const visibleText = renderedStatus;
+function buildPatchStatusDecision(plannedChanges: readonly PlannedFileChange[], dryRun: boolean, hashMode: boolean): PatchStatusDecision {
+  const visibleText = hashMode ? renderPatchHashReceiptDiffs(plannedChanges.map(toDiffInput)) : renderUniversalPatchStatus(plannedChanges, dryRun);
   const visibleLineCount = countRenderedLines(visibleText);
   const overflow = getVisibleOutputOverflow(visibleText, visibleLineCount);
   if (overflow) {
-    const action = dryRun ? "Patch dry-run succeeded" : "Patch applied";
-    const text = `${action}. Status omitted: ${overflow.actual} exceeds visible cap ${overflow.max}.`;
+    const text = renderUniversalPatchStatus(plannedChanges, dryRun);
     return {
       text,
       omitted: true,

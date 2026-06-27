@@ -11,6 +11,8 @@ HASH│content
 
 Short or low-entropy lines still include the `│` marker but no visible hash: `trim().length < 8` or entropy `< 10` shows no hash, entropy `< 20` shows 3 chars, otherwise 4. `HASH` is the first 3 or 4 characters of the SHA-256 based full line hash. Line terminators are excluded. Duplicate content produces same full hash and same visible prefix.
 
+Hash mode is opt-in. Set `locatorPatch.hashMode: true` in pi `settings.json`, or use `PI_LOCATOR_PATCH_HASH_MODE=1` / `0` to force it for quick testing. In hash mode, built-in `read` is removed from active tools and patch success output uses the hash receipt described below.
+
 Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline convention (`LF`, `CRLF`, or `CR`) and final-newline state are preserved on update write. Empty file has zero logical lines.
 
 ## Universal patch
@@ -54,7 +56,7 @@ Patch must start with `*** Begin Patch` and end with `*** End Patch`. One operat
 - Each body row starts with `+`; text after `+` is literal file content.
 - Do not include hashes in `+` lines unless those hash characters are intended file content.
 - New file content is written as rows joined with `\n`; no implicit final newline is added.
-- Visible status exposes only the Add File header and `Applied`, never content or hashes.
+- In hash mode, visible receipt exposes the Add File header, `@@ add file @@`, and inserted content rows. Without hash mode, visible status is the Add File header plus `Applied`.
 
 ## Update File
 
@@ -138,20 +140,23 @@ Delete sections match Codex syntax and contain no body:
 
 Delete is a hard delete of the resolved regular file after validation. Validation requires an existing UTF-8 text file. Visible status for delete is header plus `Deleted file`; deleted content is not visible.
 
-## Success status
+## Success receipt
 
-`patch` success output is compact, not a full patched file, not a content diff, and not a hash receipt:
+With hash mode enabled, `patch` success output is a compact hash-only receipt, not a full patched file:
 
 ```text
 *** Add File: new.txt
-Applied
+@@ add file @@
++9Nrk
 *** Update File: existing.txt
-Applied
+@@ matched line 12 @@
+ Abc1
++Z9xQ
 *** Delete File: old.txt
 Deleted file
 ```
 
-Visible status rows include only file operation headers plus `Applied`, `Validated` for dry runs, or `Deleted file`. They do not include file content or post-apply hashes. Use `read_hash` when current hashes are needed.
+Update receipts show hunk headers, surviving context line hashes, and inserted-line hashes. Deleted rows are omitted. Delete receipts show only the operation header and `Deleted file`. If the receipt exceeds visible output limits, the tool falls back to compact status rows with `Applied`, `Validated`, or `Deleted file`. Without hash mode, success output is compact status rows only.
 
 ## `details.diff`
 

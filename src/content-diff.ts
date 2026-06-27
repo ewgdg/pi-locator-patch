@@ -1,4 +1,5 @@
 import type { ApplyPatchResult, PatchTranscriptLine } from "./apply.js";
+import { hashLine } from "./hash.js";
 import { parseText } from "./text-lines.js";
 
 export type PatchTranscriptDiffKind = "add" | "update" | "delete";
@@ -15,6 +16,14 @@ export function renderPatchTranscriptDiffs(inputs: readonly PatchTranscriptDiffI
   return inputs.map(renderPatchTranscriptDiff).join("\n");
 }
 
+export function renderPatchHashReceiptDiffs(inputs: readonly PatchTranscriptDiffInput[]): string {
+  return inputs.map(renderPatchHashReceiptDiff).join("\n");
+}
+
+export function renderPatchHashReceiptDiff(input: PatchTranscriptDiffInput): string {
+  return [renderUniversalPatchHeader(input), ...renderHashReceiptBody(input)].join("\n");
+}
+
 export function renderPatchTranscriptDiff(input: PatchTranscriptDiffInput): string {
   return [renderOldPathHeader(input), renderNewPathHeader(input), ...renderTranscriptBody(input)].join("\n");
 }
@@ -25,6 +34,36 @@ function renderOldPathHeader(input: PatchTranscriptDiffInput): string {
 
 function renderNewPathHeader(input: PatchTranscriptDiffInput): string {
   return `+++ ${input.kind === "delete" ? "/dev/null" : `b/${input.path}`}`;
+}
+
+function renderUniversalPatchHeader(input: PatchTranscriptDiffInput): string {
+  const operation = input.kind === "add" ? "Add" : input.kind === "delete" ? "Delete" : "Update";
+  return `*** ${operation} File: ${input.path}`;
+}
+
+function renderHashReceiptBody(input: PatchTranscriptDiffInput): string[] {
+  if (input.kind === "add") {
+    return ["@@ add file @@", ...parseText(input.newText ?? "").lines.map((line) => `+${hashLine(line)}`)];
+  }
+
+  if (input.kind === "delete") {
+    return ["Deleted file"];
+  }
+
+  if (!input.applyResult) {
+    throw new Error("Update hash receipt requires applyResult.");
+  }
+
+  return input.applyResult.hunkTranscripts.flatMap((hunk) => [
+    hunk.matchStart === null ? "@@ empty file @@" : `@@ matched line ${hunk.matchStart + 1} @@`,
+    ...hunk.lines.flatMap(renderHashReceiptLine)
+  ]);
+}
+
+function renderHashReceiptLine(line: PatchTranscriptLine): string[] {
+  if (line.kind === "insert") return [`+${hashLine(line.content)}`];
+  if (line.kind === "context") return [` ${hashLine(line.content)}`];
+  return [];
 }
 
 function renderTranscriptBody(input: PatchTranscriptDiffInput): string[] {
