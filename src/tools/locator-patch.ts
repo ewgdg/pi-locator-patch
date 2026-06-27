@@ -51,7 +51,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   Line matches in a hunk section are grouped to form a hunk match.
   #### Locator Choice Policy
   <important>Token efficiency is the highest priority.</important>
-  Prefer hash locators (\`#<hash>\`) when hash is already given.
+  Use hash locators (\`#<hash>\`) when hash is already known for a line.
   Otherwise use the shortest prefix or suffix or contains locator that uniquely identifies the target line in its hunk context.
   Use line anchor to disambiguate only if the latest accurate line offset is available and earlier hunks in the same file operation will not shift it.
   Use range locator whenever possible for range selection.
@@ -121,7 +121,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       \`\`\`
       </not_preferred_exact_patch>
       <explanation>
-      Exact text works, but prefix locators should use the shortest distinctive prefix that is enough.
+      Exact text works, but other locators can be shorter.
       </explanation>
       <patch>
       \`\`\`patch
