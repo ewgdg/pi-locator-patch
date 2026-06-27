@@ -92,6 +92,30 @@ Rules:
 - Zero matches = stale hunk. More than one match = ambiguous hunk.
 - Pure insertion has empty match sequence and is supported only when target file has zero logical lines; hunk anchor hints are rejected on pure insert hunks because there is no resolved match start.
 
+### Delete a blank line
+
+Use `-:` to delete one blank line. `:` is the exact-text locator; with no text after it, it matches an empty logical line.
+
+Input:
+
+```text
+before
+
+after
+```
+
+Patch:
+
+```diff
+*** Begin Patch
+*** Update File: existing.txt
+@@
+=:before
+-:
+=:after
+*** End Patch
+```
+
 ## Delete File
 
 Delete sections match Codex syntax and contain no body:
