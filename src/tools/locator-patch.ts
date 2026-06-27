@@ -66,8 +66,10 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     ### Hunk Match
     A hunk can contain line matchers.
     The syntax for line matcher is \`<operator><locator>\`.
-    This format is not compatible with unified diff.
     Line matches in a hunk section are grouped to form a hunk match.
+    #### Caveats
+    This format is not compatible with unified diff.
+    Legacy forms like \`-<text>\` to delete text is not supported, must pick one of the supported locators.
     Only \`Update File\` section can have hunk match.
     #### Match Operators
     Match operator (\`<operator>\`) can be either "-", "=".
@@ -136,7 +138,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       <explanation>
         find a hunk with first line matches "aaa" and last line starts with "d".
         delete the first line and last line.
-        delete lines in-between first and last line using range selector.
+        delete lines in-between first and last line using range locator.
         result is that all lines are deleted.
       </explanation>
     </example>
@@ -182,7 +184,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
         insert a new line "bbb" in-between.
       </explanation>
     </example>
-    <example description="use combined selector">
+    <example description="use combined locator">
       <content>
         abcd
         cbdd

@@ -174,7 +174,7 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
 function throwRawTextSelectorError(kind: MatchPatchOpKind, selector: string, line: string): never {
   const suggestedExactSelector = kind === "context" ? `=:${selector}` : `-:${selector}`;
   throw new InvalidPatchError(
-    `Raw ${kind} row detected: '${line}'. Rows use <operation><selector><locator>; use exact selector '${suggestedExactSelector}', or one of ${kind === "context" ? "'=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '=#<hash>', or '=...'" : "'-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '-#<hash>', or '-...'"}.`
+    `Raw ${kind} row detected: '${line}'. Rows use <operator><locator>; use exact locator '${suggestedExactSelector}', or one of ${kind === "context" ? "'=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '=#<hash>', or '=...'" : "'-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '-#<hash>', or '-...'"}.`
   );
 }
 

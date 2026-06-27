@@ -1,45 +1,16 @@
 # pi-locator-patch
 
-Pi extension package for plain/optional-hash reads and universal hash/text locator patch apply.
+Pi extension for token-efficient file edits using explicit locator patches.
 
-When loaded, extension overrides Pi's built-in `read`, disables built-in `edit` and `write`, and enables only `read` / `patch` for file reads and writes. `patch` can add files, so built-in `write` is hidden.
+The package registers `patch` for multi-file add/update/delete patch application.
 
-## Optional stable hash locators
+Core design: keep patches short while staying exact. Use the shortest unique locator that explains the target, such as prefix/contains/suffix locators instead of full-line text, and `=...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
 
-Text `read` output is plain content by default. Pass `includeHashes: true` when hash locators are useful. Eligible lines are prefixed as `HASH│content`; short or low-entropy lines stay plain even in hash mode.
+On session start, the extension removes mutable built-in tools (`edit`, `write`) and old locator tool names.
 
-Stable hashes are a pure function of exact full line content. They do not depend on file path, line number, neighboring lines, duplicate counters, file-local collision checks, or read range. Visible hashes are 3 or 4 base64url characters depending on trimmed length/entropy (`trim().length < 8` or entropy `< 10` shows no hash; entropy `< 20` shows 3 chars; otherwise 4). `patch` accepts 3- or 4-character hash locators and matches them as prefixes of the full 4-character line hash.
+## `patch`
 
-If an agent already knows the target line hash, it can patch with that hash later without doing a redundant read first. If it knows line text, it can use exact text selectors (`=:<text>` / `-:<text>`), prefix selectors (`=^<prefix>` / `-^<prefix>`), contains selectors (`=*<needle>` / `-*<needle>`), combined selectors (`=?{...}` / `-?{...}`), or suffix selectors (`=$<suffix>` / `-$<suffix>`). `patch` still requires exactly one matching hunk span, so stale or ambiguous patches fail instead of falling back to fuzzy edits.
-
-## Tools
-
-### `read`
-
-Input:
-
-```ts
-{
-  path: string;
-  offset?: number; // default 1
-  limit?: number;  // default 2000, max 2000
-  includeHashes?: boolean; // default false
-}
-```
-
-For text files, default output contains plain content lines. With `includeHashes: true`, eligible lines are prefixed with variable 3/4-character hashes; lines with visible hash length 0 remain plain:
-
-```text
-plain short line
-Ab3│content with 3-char hash
-Ab3_│content with 4-char hash
-```
-
-No line numbers, duplicate counters, or metadata rows are added. Image files (`jpg`, `png`, `gif`, `webp`) delegate to Pi's built-in `read` behavior and are returned as image reads, not transformed into hash-prefixed text rows.
-
-### `patch`
-
-Input:
+`patch` accepts Codex-like universal patch text. Provide exactly one of `patch` or `patch_file`; `patch_file` and file paths inside the patch resolve from the tool cwd. Prefer concise, unique locators over long copied context.
 
 ```ts
 {
@@ -47,11 +18,7 @@ Input:
   patch_file?: string;
   dry_run?: boolean;
 }
-
-// Provide exactly one of patch or patch_file. patch_file resolves against cwd.
 ```
-
-Preferred syntax is Codex-like universal patch text:
 
 ```diff
 *** Begin Patch
@@ -64,25 +31,53 @@ Preferred syntax is Codex-like universal patch text:
 +literal inserted line
 @@ @120...140
 =:start context text
-=*middle needle
-=?{"prefix":"start","contains":["middle","needle"],"suffix":"end"}
 =...
 +literal insertion after skipped context
-=#HHHH
-@@
-=#HHHH
--...
-+literal replacement line
 =:end context text
 *** Delete File: old.txt
 *** End Patch
 ```
 
-Update hunk context/delete rows use `<operation><selector><locator>` syntax: `=` or `-` operation, then selector `:`, `^`, `*`, `?`, `$`, `#`, or `...`, then selector-specific locator text/hash/JSON. Forms: `=:<text>` / `-:<text>` for exact context/delete text, `=^<prefix>` / `-^<prefix>` for prefix context/delete text, `=*<needle>` / `-*<needle>` for contains context/delete text, `=?{...}` / `-?{...}` for combined context/delete text, `=$<suffix>` / `-$<suffix>` for suffix context/delete text, `=#<hash>` / `-#<hash>` for hash context/delete (3 or 4 base64url characters). Compatibility only: a context row beginning with one space is exact context text after that space (` literal` equals `=:literal`; a lone space equals `=:`), and selector-looking text after the space stays literal. Insert rows use `+<content>` and have no selector. Hunk headers are `@@`, `@@ @<line>`, or `@@ @<start>...<end>`; `@@ @<line>` starts searching at 1-based line `<line>` and requires the resolved match start to be at or after that line. `@@ @<start>...<end>` requires the resolved match span to stay within inclusive 1-based lines `<start>...<end>`. `=...` preserves a skipped context range between surrounding context operations; `-...` deletes that range. Combined selector JSON must be an object with only `prefix`, `contains`, and `suffix`; at least one key is required. `prefix`/`suffix` must be non-empty strings. `contains` may be a non-empty string or non-empty array of non-empty strings, and every supplied predicate must match the same line. Do not use read-output `HASH│content` rows as patch operations. Insert operations contain literal new content directly after `+`; do not include hashes in `+` lines unless those hash characters are intended file content. Exactly one contiguous or sparse match is required. No fuzzy fallback, line-number matching, duplicate counters, or perfect hashing.
+### File operations
 
-Success output is compact and model-visible: file operation headers plus status lines only. It does not include file content or post-apply hashes; use `read` with `includeHashes: true` when current hashes are needed. `details.diff` is a human patch transcript for host/UI, not a whole-file diff. Update entries show only the resolved input hunk lines; Delete File omits deleted file content.
+- `*** Add File: path` creates a new UTF-8 text file. Body rows must start with `+`; text after `+` is literal file content.
+- `*** Update File: path` applies locator hunks to an existing UTF-8 text file.
+- `*** Delete File: path` hard-deletes an existing regular text file. Delete sections have no body.
 
-File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a retry patch file path containing the failed operation plus skipped later operations. `dry_run: true` validates the full patch without writing.
+One operation per path is supported.
+
+### Update hunks
+
+Hunk headers:
+
+- `@@` — search whole file.
+- `@@ @<line>` — search at or after 1-based line.
+- `@@ @<start>...<end>` — require resolved match span inside inclusive line range.
+
+Rows inside update hunks:
+
+- `=<locator>` — context line; used only for matching/anchoring.
+- `-<locator>` — delete matched line.
+- `+<content>` — insert literal line content.
+
+Locators:
+
+- `:<text>` exact line text, e.g. `=:const x = 1;`
+- `^<prefix>` line starts with prefix.
+- `*<needle>` line contains text.
+- `$<suffix>` line ends with suffix.
+- `?{...}` combined JSON locator with `prefix`, `contains`, and/or `suffix`.
+- `...` range between surrounding matchers: `=...` preserves, `-...` deletes.
+
+Hash prefix locator `#<hash>` also exists for rare fallback cases. Prefer text locators because they are readable and avoid hash collision ambiguity.
+
+Compatibility form: a context row beginning with one space is exact text after that space (`literal` equals `=:literal`).
+
+A hunk must resolve to exactly one contiguous span, or exactly one sparse span when `...` is used. Zero matches fail as stale. Multiple matches fail as ambiguous. There is no fuzzy fallback.
+
+### Output and failure behavior
+
+Success output is compact status only:
 
 ```text
 *** Add File: new.txt
@@ -93,13 +88,6 @@ Applied
 Deleted file
 ```
 
-Delete File uses Codex behavior: the section contains only `*** Delete File: path`. It hard-deletes the resolved regular file after validation. Deleted content is omitted from visible output and human diff details.
+Dry runs return `Validated` instead of writing.
 
-## Validate
-
-```sh
-npm install
-npm run typecheck
-npm test
-npm run validate
-```
+File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a **retry patch** file containing the unapplied operations. Agents can later reuse the retry patch file to avoid re-emitting large output tokens.

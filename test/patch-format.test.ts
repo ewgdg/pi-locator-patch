@@ -162,9 +162,9 @@ describe("patch parser", () => {
   it("rejects raw delete, hash locator, and unsupported operations", () => {
     const hash = hashLine("ctx");
 
-    expect(() => parsePatch(["@@", `-${hash}`].join("\n"))).toThrow("Raw delete row detected");
-    expect(() => parsePatch(["@@", "=bare text"].join("\n"))).toThrow("use exact selector '=:bare text'");
-    expect(() => parsePatch(["@@", "-bare text"].join("\n"))).toThrow("use exact selector '-:bare text'");
+    expect(() => parsePatch(["@@", `-${hash}`].join("\n"))).toThrow("Rows use <operator><locator>");
+    expect(() => parsePatch(["@@", "=bare text"].join("\n"))).toThrow("use exact locator '=:bare text'");
+    expect(() => parsePatch(["@@", "-bare text"].join("\n"))).toThrow("use exact locator '-:bare text'");
     expect(() => parsePatch(["@@", `=${hash}`].join("\n"))).toThrow("[E_INVALID_PATCH]");
     expect(() => parsePatch(["@@", `~${hash}`].join("\n"))).toThrow("[E_INVALID_PATCH]");
   });
