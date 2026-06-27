@@ -1,4 +1,4 @@
-import { InvalidPatchError } from "./errors.js";
+import { annotatePatchErrorLocation, InvalidPatchError } from "./errors.js";
 import { isHash, type HashFunction, hashLine } from "./hash.js";
 
 export type MatchPatchOpKind = "context" | "delete";
@@ -48,7 +48,7 @@ export interface Patch {
   hunks: Hunk[];
 }
 
-export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): Patch {
+export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, lineOffset = 0): Patch {
   const lines = splitPatchLines(patchText);
   let index = 0;
   const hunks: Hunk[] = [];
@@ -58,32 +58,34 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine): 
   }
 
   if (lines[index]?.startsWith("--- ") || lines[index]?.startsWith("+++ ")) {
-    throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.");
+    throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.", { inputLine: patchInputLine(index, lineOffset) });
   }
 
   while (index < lines.length) {
     const line = lines[index];
+    const hunkHeaderLine = patchInputLine(index, lineOffset);
     if (line.startsWith("--- ") || line.startsWith("+++ ")) {
-      throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.");
+      throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.", { inputLine: hunkHeaderLine });
     }
-    const anchorHint = parseHunkHeader(line);
+    const anchorHint = parseHunkHeader(line, hunkHeaderLine);
     index += 1;
 
     const ops: PatchOp[] = [];
     while (index < lines.length && !isHunkHeaderLine(lines[index])) {
       const opLine = lines[index];
+      const operationLine = patchInputLine(index, lineOffset);
       if (opLine.startsWith("--- ") || opLine.startsWith("+++ ")) {
-        throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.");
+        throw new InvalidPatchError("File headers are not supported inside Codex-style Update File sections.", { inputLine: operationLine });
       }
       if (opLine.startsWith("@@")) {
-        parseHunkHeader(opLine);
+        parseHunkHeader(opLine, operationLine);
       }
-      ops.push(parsePatchOp(opLine, hashFn));
+      ops.push(parsePatchOp(opLine, hashFn, operationLine));
       index += 1;
     }
 
     if (ops.length === 0) {
-      throw new InvalidPatchError("Hunk must contain at least one operation.");
+      throw new InvalidPatchError("Hunk must contain at least one operation.", { inputLine: hunkHeaderLine });
     }
     hunks.push(anchorHint ? { anchorHint, ops } : { ops });
   }
@@ -101,13 +103,13 @@ function isHunkHeaderLine(line: string): boolean {
   return HUNK_HEADER_PATTERN.test(line);
 }
 
-function parseHunkHeader(line: string): HunkAnchorHint | undefined {
+function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | undefined {
   const match = HUNK_HEADER_PATTERN.exec(line);
   if (!match) {
     if (line.startsWith("@@")) {
-      throw new InvalidPatchError("Hunk header must be '@@', '@@ @<positive-line>', or '@@ @<start>...<end>'.");
+      throw new InvalidPatchError("Hunk header must be '@@', '@@ @<positive-line>', or '@@ @<start>...<end>'.", { inputLine });
     }
-    throw new InvalidPatchError(`Expected hunk header '@@', got '${line}'.`);
+    throw new InvalidPatchError(`Expected hunk header '@@', got '${line}'.`, { inputLine });
   }
 
   const lineText = match[1];
@@ -117,33 +119,33 @@ function parseHunkHeader(line: string): HunkAnchorHint | undefined {
   const endLineText = match[2];
   const endLine = endLineText === undefined ? undefined : Number(endLineText);
   if (!Number.isSafeInteger(hintLine) || (endLine !== undefined && !Number.isSafeInteger(endLine))) {
-    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Line numbers must be safe positive integers.`);
+    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Line numbers must be safe positive integers.`, { inputLine });
   }
   if (endLine !== undefined && hintLine > endLine) {
-    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Start line must be less than or equal to end line.`);
+    throw new InvalidPatchError(`Malformed hunk anchor hint '${line}'. Start line must be less than or equal to end line.`, { inputLine });
   }
   return endLine === undefined ? { line: hintLine } : { line: hintLine, endLine };
 }
 
-function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
+function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
   if (line.startsWith("+")) {
     const content = line.slice(1);
     return { kind: "insert", hash: hashFn(content), content };
   }
   if (line.startsWith("=")) {
-    return parseSelectorPatchOp("context", line.slice(1), line);
+    return parseSelectorPatchOp("context", line.slice(1), line, inputLine);
   }
   if (line.startsWith(" ")) {
-    throw new InvalidPatchError("Leading-space context rows are not supported. Use '=:' exact locators for context lines, including indented lines.");
+    throw new InvalidPatchError("Leading-space context rows are not supported. Use '=:' exact locators for context lines, including indented lines.", { inputLine });
   }
   if (line.startsWith("-")) {
-    return parseSelectorPatchOp("delete", line.slice(1), line);
+    return parseSelectorPatchOp("delete", line.slice(1), line, inputLine);
   }
 
-  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use '=:<text>', '=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '-:<text>', '-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '+<text>', '=#<hash>', '-#<hash>', '=...', or '-...'.`);
+  throw new InvalidPatchError(`Malformed patch operation '${line}'. Use '=:<text>', '=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '-:<text>', '-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '+<text>', '=#<hash>', '-#<hash>', '=...', or '-...'.`, { inputLine });
 }
 
-function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: string): PatchOp {
+function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
   if (selector === "...") {
     return { kind: "range", rangeKind: kind };
   }
@@ -151,56 +153,61 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
     return { kind, content: selector.slice(1), textSelector: "exact" };
   }
   if (selector.startsWith("#")) {
-    return parseHashPatchOp(kind, selector.slice(1), line);
+    return parseHashPatchOp(kind, selector.slice(1), line, inputLine);
   }
   if (selector.startsWith("^")) {
-    return parsePrefixPatchOp(kind, selector.slice(1), line);
+    return parsePrefixPatchOp(kind, selector.slice(1), line, inputLine);
   }
   if (selector.startsWith("*")) {
-    return parseContainsPatchOp(kind, selector.slice(1), line);
+    return parseContainsPatchOp(kind, selector.slice(1), line, inputLine);
   }
   if (selector.startsWith("?")) {
-    return parseCombinedPatchOp(kind, selector.slice(1), line);
+    return parseCombinedPatchOp(kind, selector.slice(1), line, inputLine);
   }
   if (selector.startsWith("$")) {
-    return parseSuffixPatchOp(kind, selector.slice(1), line);
+    return parseSuffixPatchOp(kind, selector.slice(1), line, inputLine);
   }
 
-  throwRawTextSelectorError(kind, selector, line);
+  throwRawTextSelectorError(kind, selector, line, inputLine);
 }
 
 
 
-function throwRawTextSelectorError(kind: MatchPatchOpKind, selector: string, line: string): never {
+function throwRawTextSelectorError(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): never {
   const suggestedExactSelector = kind === "context" ? `=:${selector}` : `-:${selector}`;
   throw new InvalidPatchError(
-    `Raw ${kind} row detected: '${line}'. Rows use <operator><locator>; use exact locator '${suggestedExactSelector}', or one of ${kind === "context" ? "'=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '=#<hash>', or '=...'" : "'-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '-#<hash>', or '-...'"}.`
+    `Raw ${kind} row detected: '${line}'. Rows use <operator><locator>; use exact locator '${suggestedExactSelector}', or one of ${kind === "context" ? "'=^<prefix>', '=*<needle>', '=?{...}', '=$<suffix>', '=#<hash>', or '=...'" : "'-^<prefix>', '-*<needle>', '-?{...}', '-$<suffix>', '-#<hash>', or '-...'"}.`,
+    { inputLine }
   );
 }
 
-function parsePrefixPatchOp(kind: MatchPatchOpKind, content: string, line: string): MatchPatchOp {
+function parsePrefixPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} prefix operation '${line}'. Prefix selectors require non-empty text after '^'.`);
+    throw new InvalidPatchError(`Malformed ${kind} prefix operation '${line}'. Prefix selectors require non-empty text after '^'.`, { inputLine });
   }
   return { kind, content, textSelector: "prefix" };
 }
 
-function parseContainsPatchOp(kind: MatchPatchOpKind, content: string, line: string): MatchPatchOp {
+function parseContainsPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} contains operation '${line}'. Contains selectors require non-empty text after '*'.`);
+    throw new InvalidPatchError(`Malformed ${kind} contains operation '${line}'. Contains selectors require non-empty text after '*'.`, { inputLine });
   }
   return { kind, content, textSelector: "contains" };
 }
 
-function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, line: string): MatchPatchOp {
+function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, line: string, inputLine: number): MatchPatchOp {
   let value: unknown;
   try {
     value = JSON.parse(jsonText);
   } catch {
-    throw new InvalidPatchError(`Malformed ${kind} combined selector operation '${line}'. Combined selectors require valid JSON after '?'.`);
+    throw new InvalidPatchError(`Malformed ${kind} combined selector operation '${line}'. Combined selectors require valid JSON after '?'.`, { inputLine });
   }
 
-  return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined selector operation '${line}'. Combined selector`) };
+  try {
+    return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined selector operation '${line}'. Combined selector`) };
+  } catch (error) {
+    throw annotatePatchErrorLocation(error, { inputLine });
+  }
 }
 
 export function normalizeCombinedTextSelector(value: unknown, description = "Combined selector"): CombinedTextSelector {
@@ -252,18 +259,22 @@ function parseOptionalCombinedContains(value: unknown, description: string): str
   return value;
 }
 
-function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, line: string): MatchPatchOp {
+function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} suffix operation '${line}'. Suffix selectors require non-empty text after '$'.`);
+    throw new InvalidPatchError(`Malformed ${kind} suffix operation '${line}'. Suffix selectors require non-empty text after '$'.`, { inputLine });
   }
   return { kind, content, textSelector: "suffix" };
 }
 
-function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string): MatchPatchOp {
+function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, line: string, inputLine: number): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be 3 or 4 base64url characters after '${kind === "context" ? "=#" : "-#"}'.`);
+    throw new InvalidPatchError(`Malformed ${kind} hash operation '${line}'. Hash locators must be 3 or 4 base64url characters after '${kind === "context" ? "=#" : "-#"}'.`, { inputLine });
   }
   return { kind, hash };
+}
+
+function patchInputLine(index: number, lineOffset: number): number {
+  return lineOffset + index + 1;
 }
 
 function splitPatchLines(text: string): string[] {

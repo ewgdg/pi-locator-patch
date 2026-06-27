@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COLLAPSED_ERROR_INPUT_MAX_LINES,
   COLLAPSED_RESULT_DIFF_MAX_LINES,
   EXPANDED_RESULT_DIFF_MAX_LINES,
   buildPatchResultRenderText,
@@ -79,6 +80,51 @@ describe("patch result renderer helpers", () => {
         theme
       })
     ).toBe("<success>*** Update File: file.txt</success>");
+  });
+
+  it("renders error with input preview centered on reported line", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      ...Array.from({ length: COLLAPSED_ERROR_INPUT_MAX_LINES - 2 }, (_, index) => `+extra-${index}`),
+      " old raw context",
+      "+new",
+      "*** End Patch"
+    ].join("\n");
+
+    const rendered = buildPatchResultRenderText({
+      resultText: "[E_INVALID_PATCH] Line 18: Leading-space context rows are not supported.",
+      details: undefined,
+      expanded: false,
+      isPartial: false,
+      isError: true,
+      errorInput: { patch },
+      theme
+    });
+
+    expect(rendered).toContain("<error>[E_INVALID_PATCH] Line 18: Leading-space context rows are not supported.</error>");
+    expect(rendered).toContain("Agent input around line 18 (patch, lines 14-20 of 20):");
+    expect(rendered).toContain("... 13 earlier input lines omitted");
+    expect(rendered).toContain("<error>18 │ </error><toolDiffContext> old raw context</toolDiffContext>");
+    expect(rendered).toContain("<dim>19 │ </dim><toolDiffAdded>+new</toolDiffAdded>");
+    expect(rendered).not.toContain("*** Begin Patch");
+  });
+
+  it("renders patch_file input path on errors when inline patch text is absent", () => {
+    const rendered = buildPatchResultRenderText({
+      resultText: "[E_FILE_TEXT] File not found: change.patch",
+      details: undefined,
+      expanded: false,
+      isPartial: false,
+      isError: true,
+      errorInput: { patch_file: "change.patch" },
+      theme
+    });
+
+    expect(rendered).toContain("<error>[E_FILE_TEXT] File not found: change.patch</error>");
+    expect(rendered).toContain("<muted>Agent input:</muted>");
+    expect(rendered).toContain("<dim>patch_file: </dim><toolDiffContext>change.patch</toolDiffContext>");
   });
 
   it("builds human render text from details.diff while keeping status content separate", () => {

@@ -63,17 +63,17 @@ describe("universal patch parser", () => {
       *** End Patch
     `;
 
-    expect(() => parsePatchInput(source)).toThrow("Leading-space context rows are not supported");
+    expect(() => parsePatchInput(source)).toThrow("Line 4: Leading-space context rows are not supported");
   });
 
   it("rejects add body lines without Codex plus prefixes", () => {
     const patch = ["*** Begin Patch", "*** Add File: added.txt", "missing prefix", "*** End Patch"].join("\n");
-    expect(() => parseUniversalPatch(patch)).toThrow("[E_INVALID_PATCH]");
+    expect(() => parseUniversalPatch(patch)).toThrow("Line 3: Add File body lines must start with '+'.");
   });
 
   it("rejects delete sections with body lines", () => {
     const withBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "@@", row("=", "ctx"), "*** End Patch"].join("\n");
-    expect(() => parseUniversalPatch(withBody)).toThrow("[E_INVALID_PATCH]");
+    expect(() => parseUniversalPatch(withBody)).toThrow("Line 3: Delete File sections must not include hunks or body lines.");
   });
 
   it("serializes parsed operations as reusable universal patch text", () => {
@@ -118,7 +118,7 @@ describe("universal patch parser", () => {
       "*** End Patch"
     ].join("\n");
 
-    expect(() => parseUniversalPatch(source)).toThrow("Leading-space context rows are not supported");
+    expect(() => parseUniversalPatch(source)).toThrow("Line 4: Leading-space context rows are not supported");
   });
 
   it("round-trips exact, prefix, contains, combined, and suffix text selectors with marker characters", () => {

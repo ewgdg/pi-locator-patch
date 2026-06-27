@@ -1,16 +1,44 @@
+export interface PatchErrorLocation {
+  inputLine?: number;
+}
+
 export class HashlinePatchError extends Error {
+  public location?: PatchErrorLocation;
+
   constructor(
     public readonly code: string,
-    message: string
+    public readonly detail: string,
+    location?: PatchErrorLocation
   ) {
-    super(`${code} ${message}`);
+    super(`${code} ${formatPatchErrorDetail(detail, location)}`);
     this.name = new.target.name;
+    this.location = location;
+  }
+
+  withLocation(location: PatchErrorLocation): this {
+    if (this.location?.inputLine !== undefined || location.inputLine === undefined) {
+      return this;
+    }
+    this.location = { ...this.location, ...location };
+    this.message = `${this.code} ${formatPatchErrorDetail(this.detail, this.location)}`;
+    return this;
   }
 }
 
+export function annotatePatchErrorLocation(error: unknown, location: PatchErrorLocation): unknown {
+  if (error instanceof HashlinePatchError) {
+    return error.withLocation(location);
+  }
+  return error;
+}
+
+function formatPatchErrorDetail(detail: string, location: PatchErrorLocation | undefined): string {
+  return location?.inputLine === undefined ? detail : `Line ${location.inputLine}: ${detail}`;
+}
+
 export class InvalidPatchError extends HashlinePatchError {
-  constructor(message: string) {
-    super("[E_INVALID_PATCH]", message);
+  constructor(message: string, location?: PatchErrorLocation) {
+    super("[E_INVALID_PATCH]", message, location);
   }
 }
 

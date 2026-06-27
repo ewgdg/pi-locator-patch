@@ -39,23 +39,24 @@ const SECTION_HEADER_PATTERN = /^\*\*\* (Add|Update|Delete) File: (.+)$/;
 export function parseUniversalPatch(patchText: string, hashFn: HashFunction = hashLine): UniversalPatch {
   const lines = splitPatchLines(dedentBlock(patchText));
   if (lines[0] !== "*** Begin Patch") {
-    throw new InvalidPatchError("Universal patch must start with '*** Begin Patch'.");
+    throw new InvalidPatchError("Universal patch must start with '*** Begin Patch'.", { inputLine: 1 });
   }
   if (lines.at(-1) !== "*** End Patch") {
-    throw new InvalidPatchError("Universal patch must end with '*** End Patch'.");
+    throw new InvalidPatchError("Universal patch must end with '*** End Patch'.", { inputLine: Math.max(lines.length, 1) });
   }
 
   const operations: UniversalPatchOperation[] = [];
   let index = 1;
   while (index < lines.length - 1) {
-    const header = parseSectionHeader(lines[index]);
+    const header = parseSectionHeader(lines[index], index + 1);
     index += 1;
+    const bodyStartLine = index + 1;
     const body: string[] = [];
     while (index < lines.length - 1 && !isSectionHeader(lines[index])) {
       body.push(lines[index]);
       index += 1;
     }
-    operations.push(parseSection(header, body, hashFn));
+    operations.push(parseSection(header, body, hashFn, bodyStartLine));
   }
 
   if (operations.length === 0) {
@@ -67,9 +68,10 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
 
 export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine): UniversalPatch {
   const normalizedPatchText = dedentBlock(patchText);
-  const firstMeaningfulLine = splitPatchLines(normalizedPatchText).find((line) => line.length > 0);
-  if (firstMeaningfulLine !== "*** Begin Patch") {
-    throw new InvalidPatchError("Patch must be a Codex-like universal patch starting with '*** Begin Patch'.");
+  const normalizedLines = splitPatchLines(normalizedPatchText);
+  const firstMeaningfulLineIndex = normalizedLines.findIndex((line) => line.length > 0);
+  if (normalizedLines[firstMeaningfulLineIndex] !== "*** Begin Patch") {
+    throw new InvalidPatchError("Patch must be a Codex-like universal patch starting with '*** Begin Patch'.", { inputLine: firstMeaningfulLineIndex === -1 ? 1 : firstMeaningfulLineIndex + 1 });
   }
   return parseUniversalPatch(normalizedPatchText, hashFn);
 }
@@ -137,25 +139,25 @@ function hashPatchOpPrefix(kind: "context" | "delete"): string {
   return kind === "context" ? "=#" : "-#";
 }
 
-function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction): UniversalPatchOperation {
+function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction, bodyStartLine: number): UniversalPatchOperation {
   if (header.kind === "add") {
-    const lines = parseAddFileLines(body);
+    const lines = parseAddFileLines(body, bodyStartLine);
     return { kind: "add", path: header.path, lines, finalNewline: addFileRequiresFinalNewline(lines) };
   }
 
   if (header.kind === "delete") {
-    validateDeleteFileBody(body);
+    validateDeleteFileBody(body, bodyStartLine);
     return { kind: "delete", path: header.path };
   }
 
-  const patch = parsePatch(body.join("\n"), hashFn);
+  const patch = parsePatch(body.join("\n"), hashFn, bodyStartLine - 1);
   return { kind: "update", path: header.path, patch };
 }
 
-function parseAddFileLines(body: readonly string[]): string[] {
-  return body.map((line) => {
+function parseAddFileLines(body: readonly string[], bodyStartLine: number): string[] {
+  return body.map((line, index) => {
     if (!line.startsWith("+")) {
-      throw new InvalidPatchError("Add File body lines must start with '+'.");
+      throw new InvalidPatchError("Add File body lines must start with '+'.", { inputLine: bodyStartLine + index });
     }
     return line.slice(1);
   });
@@ -166,21 +168,21 @@ function addFileRequiresFinalNewline(lines: readonly string[]): boolean {
   return lines.at(-1) === "";
 }
 
-function validateDeleteFileBody(body: readonly string[]): void {
+function validateDeleteFileBody(body: readonly string[], bodyStartLine: number): void {
   if (body.length > 0) {
-    throw new InvalidPatchError("Delete File sections must not include hunks or body lines.");
+    throw new InvalidPatchError("Delete File sections must not include hunks or body lines.", { inputLine: bodyStartLine });
   }
 }
 
-function parseSectionHeader(line: string): SectionHeader {
+function parseSectionHeader(line: string, inputLine: number): SectionHeader {
   const match = SECTION_HEADER_PATTERN.exec(line);
   if (!match) {
-    throw new InvalidPatchError(`Expected file operation header, got '${line}'.`);
+    throw new InvalidPatchError(`Expected file operation header, got '${line}'.`, { inputLine });
   }
 
   const path = match[2].trim();
   if (path.length === 0) {
-    throw new InvalidPatchError("File operation path cannot be empty.");
+    throw new InvalidPatchError("File operation path cannot be empty.", { inputLine });
   }
 
   return { kind: sectionKind(match[1]), path };

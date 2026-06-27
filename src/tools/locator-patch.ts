@@ -374,6 +374,7 @@ export const patchTool = defineTool({
         expanded,
         isPartial,
         isError: context.isError || resultText?.startsWith("Error") === true,
+        errorInput: context.args,
         theme
       }),
       0,
