@@ -76,7 +76,8 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     "-" operator is used to delete the matched line.
     "=" operator is a context only noop for matching/anchoring only.
     #### Locators
-    A locator (\`<locator>\`) identifies lines for context or deletion. Most locator forms start with a marker.
+    A locator (\`<locator>\`) identifies lines for context or deletion. 
+    Most locator forms start with a type marker like ":","^","$","*","?".
     \`:<text>\` matches exact raw line text.
     \`^<prefix>\` is a prefix locator.
     \`$<suffix>\` is a suffix locator.
@@ -117,6 +118,17 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       </patch>
       <explanation>
         delete the line matching exact text "old text" and insert "new text" at the same location.
+      </explanation>
+      <bad_patch>
+        *** Begin Patch
+        *** Update File: path/to/file.txt
+        @@
+        -old text
+        +new text
+        *** End Patch
+      </bad_patch>
+      <explanation>
+        "-old text" is not a valid delete locator, a valid one usually has a leading type marker.
       </explanation>
     </example>
     <example description="range selection">
