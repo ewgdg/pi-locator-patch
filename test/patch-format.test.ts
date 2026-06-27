@@ -55,13 +55,14 @@ describe("patch parser", () => {
   });
 
   it("parses text context/delete locators literally", () => {
-    const parsed = parsePatch(["@@", "=:ctx text", "-:delete text", "=:│starts", "-:│delete pipe"].join("\n"));
+    const parsed = parsePatch(["@@", "=:ctx text", "-:delete text", "=:│starts", "-:│delete pipe", "=:  indented"].join("\n"));
 
     expect(parsed.hunks[0].ops).toMatchObject([
       { kind: "context", content: "ctx text" },
       { kind: "delete", content: "delete text" },
       { kind: "context", content: "│starts" },
-      { kind: "delete", content: "│delete pipe" }
+      { kind: "delete", content: "│delete pipe" },
+      { kind: "context", content: "  indented" }
     ]);
   });
 
@@ -139,24 +140,10 @@ describe("patch parser", () => {
     ]);
   });
 
-  it("parses leading-space context rows as exact text locators", () => {
-    const parsed = parsePatch(["@@", " literal context", " "].join("\n"));
-
-    expect(parsed.hunks[0].ops).toMatchObject([
-      { kind: "context", content: "literal context", textSelector: "exact" },
-      { kind: "context", content: "", textSelector: "exact" }
-    ]);
-  });
-
-  it("parses space-prefixed selector-looking rows as literal exact context", () => {
-    const parsed = parsePatch(["@@", " ^foo", " #abc", " ...", " :x"].join("\n"));
-
-    expect(parsed.hunks[0].ops).toMatchObject([
-      { kind: "context", content: "^foo", textSelector: "exact" },
-      { kind: "context", content: "#abc", textSelector: "exact" },
-      { kind: "context", content: "...", textSelector: "exact" },
-      { kind: "context", content: ":x", textSelector: "exact" }
-    ]);
+  it("rejects leading-space context rows", () => {
+    for (const row of [" literal context", " ", " ^foo", " #abc", " ...", " :x", " =:ctx"]) {
+      expect(() => parsePatch(["@@", row].join("\n"))).toThrow("Leading-space context rows are not supported");
+    }
   });
 
   it("rejects raw delete, hash locator, and unsupported operations", () => {

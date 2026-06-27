@@ -73,11 +73,13 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     Only \`Update File\` section can have hunk match.
     #### Match Operators
     Match operator (\`<operator>\`) can be either "-", "=".
+    It is the first char of the line matcher.
+    It cannot be empty or a space.
     "-" operator is used to delete the matched line.
     "=" operator is a context only noop for matching/anchoring only.
     #### Locators
     A locator (\`<locator>\`) identifies lines for context or deletion. 
-    Most locator forms start with a type marker like ":","^","$","*","?".
+    Locator forms start with a type marker like ":", "^", "$", "*", "?", or "...".
     \`:<text>\` matches exact raw line text.
     \`^<prefix>\` is a prefix locator.
     \`$<suffix>\` is a suffix locator.
@@ -95,8 +97,6 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     "contains" key can be mapped to a string or an array of strings.
     The JSON object must contain at least one key.
     e.g. \`{"prefix":"a","contains":["b","c"],"suffix":"d"}\`
-    #### Compatibility Forms
-    \` <text>\` is a compatibility form of \`=:<text>\`.
     ### Insertion
     Patch uses "+" operator to insert lines.
     The syntax is \`+<text>\`, where \`<text>\` is a raw string for a line content.
@@ -108,6 +108,17 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       <content>
         old text
       </content>
+      <bad_patch>
+        *** Begin Patch
+        *** Update File: path/to/file.txt
+        @@
+        -old text
+        +new text
+        *** End Patch
+      </bad_patch>
+      <explanation>
+        "-old text" is not a valid delete locator, a valid one has a type marker following the operator "-".
+      </explanation>
       <patch>
         *** Begin Patch
         *** Update File: path/to/file.txt
@@ -118,17 +129,6 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       </patch>
       <explanation>
         delete the line matching exact text "old text" and insert "new text" at the same location.
-      </explanation>
-      <bad_patch>
-        *** Begin Patch
-        *** Update File: path/to/file.txt
-        @@
-        -old text
-        +new text
-        *** End Patch
-      </bad_patch>
-      <explanation>
-        "-old text" is not a valid delete locator, a valid one usually has a leading type marker.
       </explanation>
     </example>
     <example description="range selection">
@@ -161,6 +161,18 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
         ccc
         ccc
       </content>
+      <bad_patch>
+        *** Begin Patch
+        *** Update File: path/to/file.txt
+        @@
+         :aaa
+        +bbb
+        *** End Patch
+      </bad_patch>
+      <explanation>
+        " :aaa" is invalid, it does not have an operator as the first char.
+        It should be "=:aaa".
+      </explanation>
       <patch>
         *** Begin Patch
         *** Update File: path/to/file.txt

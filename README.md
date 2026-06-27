@@ -70,8 +70,7 @@ Locators:
 - `...` range between surrounding matchers: `=...` preserves, `-...` deletes.
 
 Hash prefix locator `#<hash>` also exists for rare fallback cases. Prefer text locators because they are readable and avoid hash collision ambiguity.
-
-Compatibility form: a context row beginning with one space is exact text after that space (`literal` equals `=:literal`).
+Context rows must start with `=`. Leading-space context rows are invalid; use `=:` for exact text, including indented lines.
 
 A hunk must resolve to exactly one contiguous span, or exactly one sparse span when `...` is used. Zero matches fail as stale. Multiple matches fail as ambiguous. There is no fuzzy fallback.
 

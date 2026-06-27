@@ -134,7 +134,7 @@ function parsePatchOp(line: string, hashFn: HashFunction): PatchOp {
     return parseSelectorPatchOp("context", line.slice(1), line);
   }
   if (line.startsWith(" ")) {
-    return { kind: "context", content: line.slice(1), textSelector: "exact" };
+    throw new InvalidPatchError("Leading-space context rows are not supported. Use '=:' exact locators for context lines, including indented lines.");
   }
   if (line.startsWith("-")) {
     return parseSelectorPatchOp("delete", line.slice(1), line);
