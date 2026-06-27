@@ -46,11 +46,11 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     \`@@ @<line>\` starts searching at 1-based line \`<line>\` and requires the resolved match start to be at or after that line, while \`@@ @<start>...<end>\` requires the resolved match span to stay within inclusive 1-based line range [start, end].
     ### Hunk Match
     A hunk can contain line matchers.
-    The syntax for line matcher is \`<operator><locator>\`.
+    The syntax for line matcher is \`<operator><locator_marker>[<locator_value>]\`.
     Line matches in a hunk section are grouped to form a hunk match.
     #### Caveats
     This format is not compatible with unified diff.
-    Legacy forms like \`-<text>\` to delete text is not supported, must pick one of the supported locators.
+    Legacy forms like \`-<text>\` are not supported; use a locator marker, e.g. \`-:<text>\`.
     Only \`Update File\` section can have hunk match.
     #### Match Operators
     Match operator (\`<operator>\`) can be either "-", "=".
@@ -59,19 +59,29 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     "-" operator is used to delete the matched line.
     "=" operator is a context only noop for matching/anchoring only.
     #### Locators
-    A locator (\`<locator>\`) identifies lines for context or deletion. 
-    Locator forms start with a type marker like ":", "^", "$", "*", "?", or "...".
+    A locator identifies lines for context or deletion. 
+    It always starts with a \`<locator_marker>\` and optionally a \`<locator_value>\`.
+    ##### Locator Markers
+    A \`<locator_marker>\` is used to specify the type of locator.
+    ":" specifies an exact text locator.
+    "^" specifies a prefix locator.
+    "$" specifies a suffix locator.
+    "*" specifies a contains locator.
+    "#" specifies a hash locator.
+    "?" specifies a combined locator.
+    "..." specifies a range locator.
+    ##### Locator Values
     \`:<text>\` matches exact raw line text.
-    \`^<prefix>\` is a prefix locator.
-    \`$<suffix>\` is a suffix locator.
-    \`*<text>\` is a contains locator.
-    \`#<hash>\` is a hash locator; use \`read_hash\` to get current hashes.
+    \`^<prefix>\` matches by prefix string.
+    \`$<suffix>\` matches by suffix string.
+    \`*<text>\` matches by testing if a line contains the \`<text>\` value.
+    \`#<hash>\` matches by line hash value; use \`read_hash\` to get current hashes.
     \`?<json-obj>\` is a combined locator.
-    \`...\` is a range locator.
+    \`...\` is a range locator; it has no \`<locator_value>\`.
     e.g. \`=:<text>\` means exact context text match; \`-:<text>\` means exact delete text match.
     ##### Range Locator
     A range locator has to be used in-between other line matchers.
-    e.g. \`=...\` preserves lines between surrounding matchers; \`-...\` deletes lines between surrounding matchers.
+    e.g. \`=...\` preserves/skips lines between surrounding matchers; \`-...\` deletes lines between surrounding matchers.
     ##### Combined Locator
     A combined locator uses a JSON object to specify locators to combine.
     Currently, "prefix", "suffix", "contains" are the allowed locator keys.
@@ -303,7 +313,7 @@ export const patchTool = defineTool({
   promptSnippet: "Prefer for normal token-efficient file edits; supports multi-file changes in one patch call.",
   promptGuidelines: [
     "Prefer `patch` tool over other simple text replacement editing.",
-    "Prefer shorter locators if possible for the `patch` tool.",
+    "Prefer token-efficient locators (e.g. prefix locators over exact text locators) if possible for the `patch` tool.",
     "During non-dry `patch` tool failures, the tool stops at the failed operation and writes a retry patch file containing unapplied operations. For large patches, save output tokens by editing the retry patch file and passing it via `patch_file` instead of re-emitting large patch text.",
     "On `patch` tool success, agent-visible output is compact file status only."
   ],
