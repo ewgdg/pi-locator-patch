@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch } from "../src/api.js";
 
-const row = (prefix: " " | "=" | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
 describe("universal patch parser", () => {
   it("accepts Codex-like add, update, and delete file sections", () => {
@@ -75,7 +75,7 @@ describe("universal patch parser", () => {
   });
 
   it("rejects delete sections with body lines", () => {
-    const withBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "@@", row("=", "ctx"), "*** End Patch"].join("\n");
+    const withBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "@@", row(" ", "ctx"), "*** End Patch"].join("\n");
     expect(() => parseUniversalPatch(withBody)).toThrow("Line 3: Delete File sections must not include hunks or body lines.");
   });
 

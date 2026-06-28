@@ -27,7 +27,7 @@ function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
 }
-const row = (prefix: "=" | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
+const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 const hashContext = (content: string) => ` ${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
@@ -80,13 +80,13 @@ describe("patch visible status", () => {
 
     expect(description).toContain("<description>\nInline patch text.");
     expect(description).not.toContain("<description>\n  Inline patch text.");
-    expect(description).toMatch(/^ {4}<content>\n {4}old text\n {4}<\/content>/m);
-    expect(description).not.toMatch(/^ {4}<content>\n {6}old text/m);
+    expect(description).toMatch(/^ {4}<content>\n {4}aaaaaaaaaab\n {4}aaaaacaaaaa\n {4}bbbbbbbbbba\n {4}<\/content>/m);
+    expect(description).not.toMatch(/^ {4}<content>\n {6}aaaaaaaaaab/m);
     expect(description).toMatch(/^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}\*\*\* End Patch/m);
   });
 
   it("is agent-visible as a hash receipt with context and inserted lines only", async () => {
-    const diff = ["@@", row("=", "a"), row("-", "old"), row("+", "new"), row("=", "z")].join("\n");
+    const diff = ["@@", row(" ", "a"), row("-", "old"), row("+", "new"), row(" ", "z")].join("\n");
 
     const { file, result } = await patchFile("a\nold\nz\n", diff);
 
@@ -117,7 +117,7 @@ describe("patch visible status", () => {
   });
 
   it("applies update hunks with text-only locators", async () => {
-    const diff = ["@@", "=:a", "-:old", "+new", "=:z"].join("\n");
+    const diff = ["@@", " :a", "-:old", "+new", " :z"].join("\n");
 
     const { file, result } = await patchFile("a\nold\nz\n", diff);
 
@@ -209,10 +209,10 @@ describe("patch visible status", () => {
       "*** Begin Patch",
       "*** Update File: file.txt",
       "@@",
-      row("=", "line-49"),
+      row(" ", "line-49"),
       row("-", "line-50"),
       row("+", "changed"),
-      row("=", "line-51"),
+      row(" ", "line-51"),
       "*** End Patch"
     ].join("\n");
 

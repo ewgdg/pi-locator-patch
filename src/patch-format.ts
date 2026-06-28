@@ -153,7 +153,7 @@ function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | unde
 function hasMissingLocatorMarker(line: string): boolean {
   if (line === "") return true;
   if (line.startsWith("+")) return false;
-  if (!(line.startsWith("=") || line.startsWith(" ") || line.startsWith("-"))) return false;
+  if (!(line.startsWith(" ") || line.startsWith("-"))) return false;
 
   const selector = line.slice(1);
   if (selector === "") return line.startsWith("-");
@@ -172,7 +172,7 @@ function parseUnifiedDiffOp(line: string, hashFn: HashFunction, inputLine: numbe
     const content = line.slice(1);
     return { kind: "insert", hash: hashFn(content), content, inputLine, authoredCharCount: line.length };
   }
-  if (line.startsWith("=") || line.startsWith(" ")) {
+  if (line.startsWith(" ")) {
     return { kind: "context", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
   }
   if (line.startsWith("-")) {
@@ -187,7 +187,7 @@ function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): Pa
     const content = line.slice(1);
     return { kind: "insert", hash: hashFn(content), content, inputLine, authoredCharCount: line.length };
   }
-  if (line.startsWith("=") || line.startsWith(" ")) {
+  if (line.startsWith(" ")) {
     return parseSelectorPatchOp("context", line.slice(1), line, inputLine);
   }
   if (line.startsWith("-")) {

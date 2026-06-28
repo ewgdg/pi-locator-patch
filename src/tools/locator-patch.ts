@@ -98,7 +98,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   Use patch locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost — roughly >10 chars or >2 words. For tiny unique lines, exact-text/unified-diff may be cheaper.
   Use hash locators when a hash is already known for a line.
   Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
-  Use range locator whenever possible for hunks with more than 3 lines.
+  Use range locator whenever possible for hunks > 3 lines.
   Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
   Avoid exact text locators and unified-diff format unless for very short lines, or when necessary to disambiguate hunk matches.
   Increasing the hunk context range with shorter locators for unambiguous anchoring is usually more efficient than using exact text matches or unified-diff for long lines.
@@ -107,38 +107,47 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   
   <caveats>
   Locator rows are preferred, but malformed unified-diff muscle memory is tolerated.
-  A context/delete row without a locator marker is parsed as unified diff: text after \` \`, \`=\`, or \`-\` is exact line content.
+  A context/delete row without a locator marker is parsed as unified diff: text after \` \`, or \`-\` is exact line content.
   Only \`Update File\` section can have hunk match.
   </caveats>
 
   <examples>
-    <example description="replace one line">
+    <example description="patch locator efficiency">
       <content>
-      old text
+      aaaaaaaaaab
+      aaaaacaaaaa
+      bbbbbbbbbba
       </content>
-      <less_preferred_patch_snippet>
-      -:old text
+      <desired_content>
+      aaaaacaaaaa
+      new text
+      </desired_content>
+      <bad_patch_snippet>
+      -:aaaaaaaaaab
+       aaaaacaaaaa
+      -bbbbbbbbbba
       +new text
-      </less_preferred_patch_snippet>
-      <less_preferred_patch_snippet>
-      -old text
-      +new text
-      </less_preferred_patch_snippet>
+      </bad_patch_snippet>
       <explanation>
-      Exact text locators works, but is unnecessarily costly in this case.
-      Should use shorter locators like prefix locators.
+      Exact text match works, but is unnecessarily costly in this case.
+      Should use shorter locators like prefix or suffix locators.
       </explanation>
       <patch>
       *** Begin Patch
       *** Update File: path/to/file.txt
       @@
-      -^o
+      -$b
+       *c
+      -^b
       +new text
       *** End Patch
       </patch>
       <explanation>
-      delete the line starting with "o" and insert "new text" at the same location.
-      "^o" is enough to locate the old text.
+      "$b" locates first line that ends with "b".
+      "*c" locates the second line that contains "c".
+      In this example, " ..." could replace " *c" to preserve the middle line.
+      "^b" locates the third line starts with "b".
+      no need for exact match.
       </explanation>
     </example>
     <example description="blank line operations">
@@ -159,12 +168,6 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       +
       *** End Patch
       </patch>
-      <content description="result after patch">
-      before
-
-      after
-
-      </content>
       <explanation>
       use " :" to match a blank context line, "-:" to delete a blank line, and "+" with no following text to insert a blank line.
       </explanation>
@@ -239,6 +242,21 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       find a hunk with adjacent "aaa" and "ccc" lines.
       insert a new line "bbb" in-between.
       </explanation>
+    </example>
+    <example description="unified-diff edge cases">
+      <content>
+      :leading colon
+      </content>
+      <bad_patch_snippet>
+      -:leading colon
+      </bad_patch_snippet>
+      <explanation>
+      "-:" is treated as exact text locator instead of unified-diff to match the text "leading colon", missing the first ":".
+      There is no way to use unified-diff format to match leading ":".
+      </explanation>
+      <good_patch_snippet>
+      -::leading colon
+      </good_patch_snippet>
     </example>
   </examples>
 `);

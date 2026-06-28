@@ -111,7 +111,7 @@ export function renderPatchReceipt(receipts: readonly PatchHunkReceipt[]): strin
 }
 
 function renderPatchReceiptLine(line: PatchReceiptLine): string {
-  return `${line.kind === "insert" ? "+" : "="}${line.hash}`;
+  return `${line.kind === "insert" ? "+" : " "}${line.hash}`;
 }
 
 function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashFunction): AppliedHunk {

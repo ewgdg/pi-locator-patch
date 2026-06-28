@@ -4,7 +4,7 @@ Pi extension for token-efficient file edits using explicit locator patches.
 
 The package registers `patch` for multi-file add/update/delete patch application. In hash mode, the hash-line reader is exposed as `read`; outside hash mode, `read_hash` stays hidden and built-in `read` stays active.
 
-Core design: keep patches short while staying exact. Use concise locators and `=...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
+Core design: keep patches short while staying exact. Use concise locators and ` ...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
 
 On session start, the extension removes mutable built-in tools (`edit`, `write`), `read_hash`, and old locator tool names. Built-in `read` remains active unless hash mode is explicitly enabled; then hash-line `read` replaces it.
 
@@ -45,14 +45,14 @@ PI_LOCATOR_PATCH_HASH_MODE=0 pi   # force default mode
 +literal new file line
 *** Update File: existing.txt
 @@
-=:exact context text
+ :exact context text
 -*needle to delete by containment
 +literal inserted line
 @@ @120...140
-=:start context text
-=...
+ :start context text
+ ...
 +literal insertion after skipped context
-=:end context text
+ :end context text
 *** Delete File: old.txt
 *** End Patch
 ```
@@ -75,23 +75,23 @@ Hunk headers:
 
 Rows inside update hunks:
 
-- ` <locator>` / `=<locator>` — context line; used only for matching/anchoring.
+- ` <locator>` — context line; used only for matching/anchoring.
 - `-<locator>` — delete matched line.
 - `+<content>` — insert literal line content.
 
 Locators:
 
-- `:<text>` exact line text, e.g. `=:const x = 1;`
+- `:<text>` exact line text, e.g. ` :const x = 1;`
 - `^<prefix>` line starts with prefix.
 - `*<needle>` line contains text.
 - `$<suffix>` line ends with suffix.
 - `?{...}` combined JSON locator with `prefix`, `contains`, and/or `suffix`.
-- `...` range between surrounding matchers: `=...` preserves, `-...` deletes.
+- `...` range between surrounding matchers: ` ...` preserves, `-...` deletes.
 
 Hash prefix locator `#<hash>` is preferred in hash mode when `read` supplies a visible hash. In default mode, prefer text locators; use hash locators only for hashes already known from prior receipts or other trusted context. Use text locators when a line has no visible hash or when content predicates are clearer.
-Context rows normally start with a literal space; legacy `=` context rows are accepted. Use ` :` or `=:` for exact text, including indented lines.
+Context rows start with a literal space. Use ` :` for exact text, including indented lines.
 
-Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` `, `=`, or `-` as exact line content. Locator matching runs once; zero matches are stale and multiple matches are ambiguous.
+Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` ` or `-` as exact line content. Locator matching runs once; zero matches are stale and multiple matches are ambiguous.
 
 ### Output and failure behavior
 
