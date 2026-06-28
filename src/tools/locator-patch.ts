@@ -95,12 +95,12 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
 
   <policy>
   <important>Token efficiency is the highest priority.</important>
-  Use hash locators (\`#<hash>\`) when a hash is already known for a line.
+  Use hash locators when a hash is already known for a line.
   Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
   Use range locator whenever possible for hunks with more than 3 lines.
   Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
-  Use exact text locators (\`:<text>\`) only for short lines, or when the hunk match would be ambiguous.
-  If increasing the hunk context range with shorter locators is more efficient than using exact text locators (e.g. extra long line) then you should use more hunk context as anchor.
+  Avoid exact text locators and unified-diff format unless for very short lines, or when necessary to disambiguate hunk matches.
+  Increasing the hunk context range with shorter locators for unambiguous anchoring is usually more efficient than using exact text matches or unified-diff for long lines.
   If the tool returns a retry patch file containing large chunks of unapplied operations due to failures. Try fixing the retry patch file and passing it via \`patch_file\` instead of re-emitting large patch text to save tokens.
   </policy>
   
@@ -262,6 +262,11 @@ interface PlannedFileChange {
   oldText?: string;
   newText?: string;
   applyResult?: ApplyPatchResult;
+}
+
+interface PatchCharEfficiency {
+  patchChars: number;
+  baselineChars: number;
 }
 
 interface DryRunFileState {
@@ -613,7 +618,8 @@ function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryR
         omitReason: status.omitReason,
         overflow: status.overflow,
         visibleLineCount: status.visibleLineCount
-      }
+      },
+      charEfficiency: getPatchCharEfficiency(plannedChanges)
     }
   };
 }
@@ -670,6 +676,42 @@ function serializeAddFileText(operation: AddFileOperation): string {
     lines: operation.lines,
     newline: "\n"
   });
+}
+
+function getPatchCharEfficiency(plannedChanges: readonly PlannedFileChange[]): PatchCharEfficiency {
+  return plannedChanges.reduce(
+    (total, change) => {
+      const changeEfficiency = getFileChangeCharEfficiency(change);
+      return {
+        patchChars: total.patchChars + changeEfficiency.patchChars,
+        baselineChars: total.baselineChars + changeEfficiency.baselineChars
+      };
+    },
+    { patchChars: 0, baselineChars: 0 }
+  );
+}
+
+function getFileChangeCharEfficiency(change: PlannedFileChange): PatchCharEfficiency {
+  if (change.operation === "add") {
+    const chars = prefixedTextLinesCharCount(change.newText ?? "");
+    return { patchChars: chars, baselineChars: chars };
+  }
+  if (change.operation === "delete") {
+    return { patchChars: 0, baselineChars: prefixedTextLinesCharCount(change.oldText ?? "") };
+  }
+
+  const hunkAudits = change.applyResult?.hunkAudits ?? [];
+  return hunkAudits.reduce(
+    (total, hunkAudit) => ({
+      patchChars: total.patchChars + hunkAudit.patchCharCount,
+      baselineChars: total.baselineChars + hunkAudit.baselineCharCount
+    }),
+    { patchChars: 0, baselineChars: 0 }
+  );
+}
+
+function prefixedTextLinesCharCount(text: string): number {
+  return parseText(text).lines.reduce((total, line) => total + line.length + 1, 0);
 }
 
 

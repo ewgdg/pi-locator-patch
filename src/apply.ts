@@ -40,6 +40,8 @@ export interface PatchHunkAudit {
   matchStart: number | null;
   matchPattern: string[];
   matcherKinds: PatchMatcherKind[];
+  patchCharCount: number;
+  baselineCharCount: number;
   survivingContextHashes: string[];
   insertedHashes: string[];
   deletedHashes: string[];
@@ -123,6 +125,8 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
     }
     if (lines.length === 0 && hunk.ops.every((op) => op.kind === "insert")) {
       const insertedHashes = hunk.ops.map((op) => hashFn(op.content));
+      const insertedPatchCharCount = hunk.ops.reduce((total, op) => total + authoredCharCount(op, prefixedLineCharCount(op.content)), 0);
+      const insertedBaselineCharCount = hunk.ops.reduce((total, op) => total + prefixedLineCharCount(op.content), 0);
       return {
         lines: hunk.ops.map((op) => op.content),
         receipt: {
@@ -139,6 +143,8 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
           matchStart: null,
           matchPattern: [],
           matcherKinds: [],
+          patchCharCount: insertedPatchCharCount,
+          baselineCharCount: insertedBaselineCharCount,
           survivingContextHashes: [],
           insertedHashes,
           deletedHashes: []
@@ -171,9 +177,13 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
   const insertedHashes: string[] = [];
   const deletedHashes: string[] = [];
   const transcriptLines: PatchTranscriptLine[] = [];
+  let patchCharCount = 0;
+  let baselineCharCount = 0;
 
   for (const [opIndex, op] of hunk.ops.entries()) {
     if (op.kind === "insert") {
+      patchCharCount += authoredCharCount(op, prefixedLineCharCount(op.content));
+      baselineCharCount += prefixedLineCharCount(op.content);
       replacement.push(op.content);
       transcriptLines.push({ kind: "insert", content: op.content });
       const insertedHash = hashFn(op.content);
@@ -183,16 +193,19 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
     }
 
     if (op.kind === "range") {
+      patchCharCount += authoredCharCount(op, renderRangeLocator(op.rangeKind).length);
       const range = match.ranges.get(opIndex);
       if (!range) {
         throw new Error("Internal patch error: missing sparse range match.");
       }
       if (op.rangeKind === "context") {
+        baselineCharCount += rangeCharCount(lines, range.start, range.end);
         replacement.push(...lines.slice(range.start, range.end));
         transcriptLines.push({ kind: "contextRange", content: renderSkippedContextRange(range.end - range.start) });
       } else {
         for (let lineIndex = range.start; lineIndex < range.end; lineIndex += 1) {
           const targetContent = lines[lineIndex];
+          baselineCharCount += prefixedLineCharCount(targetContent);
           const targetHash = hashFn(targetContent);
           transcriptLines.push({ kind: "delete", content: targetContent });
           deletedHashes.push(targetHash);
@@ -206,6 +219,8 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
       throw new Error("Internal patch error: missing hash operation match.");
     }
     const targetContent = lines[targetIndex];
+    patchCharCount += authoredCharCount(op, renderMatchLocator(op).length);
+    baselineCharCount += prefixedLineCharCount(targetContent);
     const targetHash = hashFn(targetContent);
     if (op.kind === "context") {
       replacement.push(targetContent);
@@ -227,6 +242,8 @@ function applyHunk(lines: string[], hunk: Hunk, hunkIndex: number, hashFn: HashF
       matchStart: match.start,
       matchPattern,
       matcherKinds: buildMatcherKinds(hunk),
+      patchCharCount,
+      baselineCharCount,
       survivingContextHashes,
       insertedHashes,
       deletedHashes
@@ -339,6 +356,22 @@ function renderMatchLocator(op: MatchPatchOp): string {
   if (op.textSelector === "contains") return `${op.kind === "context" ? " *" : "-*"}${op.content ?? ""}`;
   if (op.textSelector === "suffix") return `${op.kind === "context" ? " $" : "-$"}${op.content ?? ""}`;
   return `${prefix}${op.content ?? ""}`;
+}
+
+function prefixedLineCharCount(content: string): number {
+  return content.length + 1;
+}
+
+function authoredCharCount(op: Hunk["ops"][number], fallback: number): number {
+  return op.authoredCharCount ?? fallback;
+}
+
+function rangeCharCount(lines: readonly string[], start: number, end: number): number {
+  let total = 0;
+  for (let index = start; index < end; index += 1) {
+    total += prefixedLineCharCount(lines[index]);
+  }
+  return total;
 }
 
 function validateSparseRanges(hunk: Hunk, hunkIndex: number): void {

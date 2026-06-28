@@ -23,6 +23,7 @@ export interface MatchPatchOp {
   combinedSelector?: CombinedTextSelector;
   unifiedDiff?: boolean;
   inputLine?: number;
+  authoredCharCount?: number;
 }
 
 export interface InsertPatchOp {
@@ -30,12 +31,14 @@ export interface InsertPatchOp {
   hash: string;
   content: string;
   inputLine?: number;
+  authoredCharCount?: number;
 }
 
 export interface RangePatchOp {
   kind: "range";
   rangeKind: RangePatchOpKind;
   inputLine?: number;
+  authoredCharCount?: number;
 }
 
 export interface HunkAnchorHint {
@@ -163,17 +166,17 @@ function hasLocatorMarker(selector: string): boolean {
 
 function parseUnifiedDiffOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
   if (line === "") {
-    return { kind: "context", content: "", textSelector: "exact", unifiedDiff: true, inputLine };
+    return { kind: "context", content: "", textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
   }
   if (line.startsWith("+")) {
     const content = line.slice(1);
-    return { kind: "insert", hash: hashFn(content), content, inputLine };
+    return { kind: "insert", hash: hashFn(content), content, inputLine, authoredCharCount: line.length };
   }
   if (line.startsWith("=") || line.startsWith(" ")) {
-    return { kind: "context", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine };
+    return { kind: "context", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
   }
   if (line.startsWith("-")) {
-    return { kind: "delete", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine };
+    return { kind: "delete", content: line.slice(1), textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
   }
 
   throw new InvalidPatchError("Malformed patch operation. Use context, delete, insert, or locator row.", { inputLine });
@@ -182,7 +185,7 @@ function parseUnifiedDiffOp(line: string, hashFn: HashFunction, inputLine: numbe
 function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
   if (line.startsWith("+")) {
     const content = line.slice(1);
-    return { kind: "insert", hash: hashFn(content), content, inputLine };
+    return { kind: "insert", hash: hashFn(content), content, inputLine, authoredCharCount: line.length };
   }
   if (line.startsWith("=") || line.startsWith(" ")) {
     return parseSelectorPatchOp("context", line.slice(1), line, inputLine);
@@ -196,13 +199,13 @@ function parsePatchOp(line: string, hashFn: HashFunction, inputLine: number): Pa
 
 function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
   if (kind === "context" && selector === "") {
-    return { kind, content: "", textSelector: "exact", inputLine };
+    return { kind, content: "", textSelector: "exact", inputLine, authoredCharCount: line.length };
   }
   if (selector === "...") {
-    return { kind: "range", rangeKind: kind, inputLine };
+    return { kind: "range", rangeKind: kind, inputLine, authoredCharCount: line.length };
   }
   if (selector.startsWith(":")) {
-    return { kind, content: selector.slice(1), textSelector: "exact", inputLine };
+    return { kind, content: selector.slice(1), textSelector: "exact", inputLine, authoredCharCount: line.length };
   }
   if (selector.startsWith("#")) {
     return parseHashPatchOp(kind, selector.slice(1), line, inputLine);
@@ -233,14 +236,14 @@ function parsePrefixPatchOp(kind: MatchPatchOpKind, content: string, _line: stri
   if (content.length === 0) {
     throw new InvalidPatchError(`Malformed ${kind} prefix locator. Expected non-empty text after ^.`, { inputLine });
   }
-  return { kind, content, textSelector: "prefix", inputLine };
+  return { kind, content, textSelector: "prefix", inputLine, authoredCharCount: _line.length };
 }
 
 function parseContainsPatchOp(kind: MatchPatchOpKind, content: string, _line: string, inputLine: number): MatchPatchOp {
   if (content.length === 0) {
     throw new InvalidPatchError(`Malformed ${kind} contains locator. Expected non-empty text after *.`, { inputLine });
   }
-  return { kind, content, textSelector: "contains", inputLine };
+  return { kind, content, textSelector: "contains", inputLine, authoredCharCount: _line.length };
 }
 
 function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, _line: string, inputLine: number): MatchPatchOp {
@@ -252,7 +255,7 @@ function parseCombinedPatchOp(kind: MatchPatchOpKind, jsonText: string, _line: s
   }
 
   try {
-    return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined locator. Combined selector`), inputLine };
+    return { kind, combinedSelector: normalizeCombinedTextSelector(value, `Malformed ${kind} combined locator. Combined selector`), inputLine, authoredCharCount: _line.length };
   } catch (error) {
     throw annotatePatchErrorLocation(error, { inputLine });
   }
@@ -311,14 +314,14 @@ function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, _line: stri
   if (content.length === 0) {
     throw new InvalidPatchError(`Malformed ${kind} suffix locator. Expected non-empty text after $.`, { inputLine });
   }
-  return { kind, content, textSelector: "suffix", inputLine };
+  return { kind, content, textSelector: "suffix", inputLine, authoredCharCount: _line.length };
 }
 
 function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, _line: string, inputLine: number): MatchPatchOp {
   if (!isHash(hash)) {
     throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 3 or 4 base64url characters after #.`, { inputLine });
   }
-  return { kind, hash, inputLine };
+  return { kind, hash, inputLine, authoredCharCount: _line.length };
 }
 
 function patchInputLine(index: number, lineOffset: number): number {

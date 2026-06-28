@@ -37,6 +37,8 @@ const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   return content.text;
 };
 const detailsDiff = (result: Awaited<ReturnType<typeof patchTool.execute>>) => (result.details as { diff: string }).diff;
+const detailsCharEfficiency = (result: Awaited<ReturnType<typeof patchTool.execute>>) =>
+  (result.details as { charEfficiency: { patchChars: number; baselineChars: number } }).charEfficiency;
 const patchParameterDescription = () => {
   const parameters = patchTool.parameters as { properties: { patch: { description?: string } } };
   return parameters.properties.patch.description ?? "";
@@ -141,6 +143,65 @@ describe("patch visible status", () => {
     expect(detailsDiff(result)).toContain("+++ b/file.txt");
     expect(detailsDiff(result)).toContain("-old");
     expect(detailsDiff(result)).toContain("+new");
+  });
+  it("reports patch chars against unified-diff baseline chars", async () => {
+    const universal = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      "-^old",
+      "+new",
+      "*** End Patch"
+    ].join("\n");
+
+    const { result } = await patchFile("old text", universal);
+
+    expect(detailsCharEfficiency(result)).toEqual({ patchChars: 9, baselineChars: 13 });
+  });
+  it("counts authored combined locator whitespace and blank unified-diff rows", async () => {
+    const combinedPatch = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      "-?{\"prefix\": \"old\"}",
+      "+new",
+      "*** End Patch"
+    ].join("\n");
+    const blankContextPatch = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      "",
+      "-old",
+      "+new",
+      "*** End Patch"
+    ].join("\n");
+
+    const { result: combinedResult } = await patchFile("old text", combinedPatch);
+    const { result: blankContextResult } = await patchFile("\nold", blankContextPatch);
+
+    expect(detailsCharEfficiency(combinedResult)).toEqual({ patchChars: 23, baselineChars: 13 });
+    expect(detailsCharEfficiency(blankContextResult)).toEqual({ patchChars: 8, baselineChars: 9 });
+  });
+  it("reports char efficiency for add, delete, range, and dry-run changes", async () => {
+    const addDir = await makeTempDir();
+    const addPatch = ["*** Begin Patch", "*** Add File: added.txt", "+hello", "+world", "*** End Patch"].join("\n");
+    const addResult = await patchTool.execute("tool-call", { patch: addPatch }, undefined, undefined, { cwd: addDir } as never);
+
+    const deleteDir = await makeTempDir();
+    await writeFile(join(deleteDir, "delete.txt"), "a\nbb");
+    const deletePatch = ["*** Begin Patch", "*** Delete File: delete.txt", "*** End Patch"].join("\n");
+    const deleteResult = await patchTool.execute("tool-call", { patch: deletePatch }, undefined, undefined, { cwd: deleteDir } as never);
+
+    const rangeDir = await makeTempDir();
+    await writeFile(join(rangeDir, "range.txt"), "a\nb\nc\nd");
+    const rangePatch = ["*** Begin Patch", "*** Update File: range.txt", "@@", " ^a", "-...", " ^d", "*** End Patch"].join("\n");
+    const rangeResult = await patchTool.execute("tool-call", { patch: rangePatch, dry_run: true }, undefined, undefined, { cwd: rangeDir } as never);
+
+    expect(detailsCharEfficiency(addResult)).toEqual({ patchChars: 12, baselineChars: 12 });
+    expect(detailsCharEfficiency(deleteResult)).toEqual({ patchChars: 0, baselineChars: 5 });
+    expect(detailsCharEfficiency(rangeResult)).toEqual({ patchChars: 10, baselineChars: 8 });
+    await expect(readFile(join(rangeDir, "range.txt"), "utf8")).resolves.toBe("a\nb\nc\nd");
   });
   it("does not expand update details to the whole file", async () => {
     const lines = Array.from({ length: 100 }, (_, index) => `line-${index}`);

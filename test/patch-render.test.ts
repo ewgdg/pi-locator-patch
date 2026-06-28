@@ -7,6 +7,7 @@ import {
   buildPatchCallRenderText,
   buildPatchResultRenderText,
   formatPatchResultDiff,
+  getPatchCharEfficiency,
   getPatchMatcherStats,
   getPatchDiffStats,
   getPatchResultDiff,
@@ -129,6 +130,25 @@ describe("patch renderer helpers", () => {
       theme
     });
     expect(rendered).toContain("<muted>Matchers: prefix 1 / unified-diff 2</muted>");
+  });
+
+  it("reads and renders patch char efficiency from result details", () => {
+    const details = {
+      charEfficiency: { patchChars: 5, baselineChars: 9 },
+      diff: "--- a/file\n+++ b/file\n-old text\n+new"
+    };
+
+    expect(getPatchCharEfficiency(details)).toEqual({ patchChars: 5, baselineChars: 9 });
+
+    const rendered = buildPatchResultRenderText({
+      details,
+      expanded: false,
+      isPartial: false,
+      isError: false,
+      theme
+    });
+
+    expect(rendered).toContain("<muted>patch chars/baseline: 5/9 (55.6%, saved 44.4%)</muted>");
   });
 
   it("renders collapsed diff with compact limit, color, omission count, and Ctrl+O hint", () => {

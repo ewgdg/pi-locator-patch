@@ -29,6 +29,11 @@ export interface PatchMatcherStats {
   total: number;
 }
 
+export interface PatchCharEfficiency {
+  patchChars: number;
+  baselineChars: number;
+}
+
 export interface FormattedPatchResultDiff {
   text: string;
   omittedLineCount: number;
@@ -96,6 +101,17 @@ export function getPatchMatcherStats(details: unknown): PatchMatcherStats {
   }
 
   return stats;
+}
+
+export function getPatchCharEfficiency(details: unknown): PatchCharEfficiency | undefined {
+  if (!isRecord(details) || !isRecord(details.charEfficiency)) {
+    return undefined;
+  }
+  const { patchChars, baselineChars } = details.charEfficiency;
+  if (!isNonNegativeInteger(patchChars) || !isNonNegativeInteger(baselineChars)) {
+    return undefined;
+  }
+  return { patchChars, baselineChars };
 }
 
 export function formatPatchResultDiff(diff: string, expanded: boolean, theme: PatchRenderTheme): FormattedPatchResultDiff {
@@ -223,7 +239,8 @@ export function buildPatchResultRenderText(options: {
   ];
   const renderedDiff = formatPatchResultDiff(diff, expanded, theme);
   const matcherStatsFooter = formatPatchMatcherStatsFooter(getPatchMatcherStats(details), theme);
-  const body = [`${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}`, renderedDiff.text, matcherStatsFooter];
+  const charEfficiencyFooter = formatPatchCharEfficiencyFooter(getPatchCharEfficiency(details), theme);
+  const body = [`${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}`, renderedDiff.text, matcherStatsFooter, charEfficiencyFooter];
 
   return body.filter((part): part is string => Boolean(part)).join("\n");
 }
@@ -287,6 +304,23 @@ function formatPatchMatcherStatsFooter(stats: PatchMatcherStats, theme: PatchRen
     .map(([label, count]) => `${label} ${count}`);
 
   return theme.fg("muted", `Matchers: ${parts.join(" / ")}`);
+}
+
+function formatPatchCharEfficiencyFooter(efficiency: PatchCharEfficiency | undefined, theme: PatchRenderTheme): string | undefined {
+  if (!efficiency) {
+    return undefined;
+  }
+  const { patchChars, baselineChars } = efficiency;
+  if (baselineChars === 0) {
+    return theme.fg("muted", `patch chars/baseline: ${patchChars}/${baselineChars} (n/a)`);
+  }
+  const ratio = (patchChars / baselineChars) * 100;
+  const saved = 100 - ratio;
+  return theme.fg("muted", `patch chars/baseline: ${patchChars}/${baselineChars} (${formatPercent(ratio)}, saved ${formatPercent(saved)})`);
+}
+
+function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
 }
 
 function formatPatchTextPreview(label: string, text: string, expanded: boolean, theme: PatchRenderTheme, targetLine?: number): string {
@@ -412,4 +446,8 @@ function extractPatchErrorSection(lines: readonly string[], startMarker: string,
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
