@@ -95,7 +95,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
 
   <policy>
   <important>Token efficiency is the highest priority.</important>
-  Use locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than locator marker cost — roughly >10 chars or >2 words. For tiny unique lines, exact-text/unified-diff may be cheaper.
+  Use patch locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost — roughly >10 chars or >2 words. For tiny unique lines, exact-text/unified-diff may be cheaper.
   Use hash locators when a hash is already known for a line.
   Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
   Use range locator whenever possible for hunks with more than 3 lines.

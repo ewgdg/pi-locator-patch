@@ -148,7 +148,7 @@ describe("patch renderer helpers", () => {
       theme
     });
 
-    expect(rendered).toContain("<muted>patch chars/baseline: 5/9 (55.6%, saved 44.4%)</muted>");
+    expect(rendered).toContain("<muted>Patch efficiency: 5/9 chars vs baseline (55.6%, saved 44.4%)</muted>");
   });
 
   it("renders collapsed diff with compact limit, color, omission count, and Ctrl+O hint", () => {

@@ -312,11 +312,11 @@ function formatPatchCharEfficiencyFooter(efficiency: PatchCharEfficiency | undef
   }
   const { patchChars, baselineChars } = efficiency;
   if (baselineChars === 0) {
-    return theme.fg("muted", `patch chars/baseline: ${patchChars}/${baselineChars} (n/a)`);
+    return theme.fg("muted", `Patch efficiency: ${patchChars}/${baselineChars} chars vs baseline (n/a)`);
   }
   const ratio = (patchChars / baselineChars) * 100;
   const saved = 100 - ratio;
-  return theme.fg("muted", `patch chars/baseline: ${patchChars}/${baselineChars} (${formatPercent(ratio)}, saved ${formatPercent(saved)})`);
+  return theme.fg("muted", `Patch efficiency: ${patchChars}/${baselineChars} chars vs baseline (${formatPercent(ratio)}, saved ${formatPercent(saved)})`);
 }
 
 function formatPercent(value: number): string {

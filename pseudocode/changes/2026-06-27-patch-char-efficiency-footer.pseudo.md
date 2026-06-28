@@ -37,7 +37,7 @@ when rendering successful patch result:
   keep existing success summary and diff preview
   keep existing matcher footer
   always print footer line when char efficiency is available:
-    patch chars/baseline: <patch>/<baseline> (<ratio>%, saved <saved>%)
+    Patch efficiency: <patch>/<baseline> chars vs baseline (<ratio>%, saved <saved>%)
   format ratio and saved with one decimal
   if baseline is zero:
     print n/a instead of percentages
