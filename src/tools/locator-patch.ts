@@ -391,9 +391,7 @@ export function setPatchToolHashModeGuideline(hashMode: boolean): void {
 }
 
 function buildPatchPromptGuidelines(hashMode: boolean): string[] {
-  const guidelines = [
-    "Prefer `patch` tool over other text-replacement-based editing.",
-  ];
+  const guidelines = [];
   if (hashMode) {
     guidelines.push("Hash mode active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes prior `read` and prior patch receipts to avoid unnecessary read.");
   }
