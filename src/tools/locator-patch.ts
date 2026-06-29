@@ -252,17 +252,31 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     <example description="unified-diff edge cases">
       <content>
       :leading colon
+      #leading hash
       </content>
       <bad_patch_snippet>
       -:leading colon
+       #leading hash
       </bad_patch_snippet>
       <explanation>
       "-:" is treated as exact text locator instead of unified-diff to match the text "leading colon", missing the first ":".
       There is no way to use unified-diff format to match leading ":".
+      Also, " #leading hash" is parsed as anchoring hash locator, which is not intended.
+      </explanation>
+      <ok_patch_snippet>
+      -::leading colon
+      :#leading hash
+      </ok_patch_snippet>
+      <explanation>
+      leading "-:" or ":" to specify the locator is for exact match.
       </explanation>
       <good_patch_snippet>
-      -::leading colon
+      -^:l
+      :^#l
       </good_patch_snippet>
+      <explanation>
+      spend less tokens with shorter locator.
+      </explanation>
     </example>
   </examples>
 `);
