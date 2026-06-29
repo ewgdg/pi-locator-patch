@@ -44,8 +44,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   ### Line Anchor
   A line anchor can be appended to a hunk header.
   Line number is 1-based.
-  A hunk with a line anchor looks like: \`@@ @<start>\`, or \`@@ @<start>...<end>\`;
-  \`@@ @<start>\` starts searching at 1-based line \`<start>\` and requires the resolved match start to be at or after that line, while \`@@ @<start>...<end>\` requires the resolved match span to stay within inclusive 1-based line range [start, end].
+  Line anchors define the allowed 1-based match span: [start, +inf) for \`@@ @<start>\`, or [start, end] for \`@@ @<start>...<end>\`.
   ### Hunk Match
   A hunk can contain line matchers.
   The syntax for line matcher is \`<operator><locator_marker>[<locator_value>]\`.
