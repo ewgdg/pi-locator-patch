@@ -1,11 +1,18 @@
 export function dedentBlock(text: string): string {
-  const lines = trimOuterBlankLines(text.split(/\r\n|\n|\r/));
-  const sharedIndent = commonLeadingWhitespacePrefix(lines.filter((line) => line.trim().length > 0));
-
-  return lines.map((line) => (line.trim().length === 0 ? "" : line.slice(sharedIndent.length))).join("\n");
+  return dedentBlockWithLineOffset(text).text;
 }
 
-function trimOuterBlankLines(lines: string[]): string[] {
+export function dedentBlockWithLineOffset(text: string): { text: string; lineOffset: number } {
+  const { lines, lineOffset } = trimOuterBlankLines(text.split(/\r\n|\n|\r/));
+  const sharedIndent = commonLeadingWhitespacePrefix(lines.filter((line) => line.trim().length > 0));
+
+  return {
+    text: lines.map((line) => (line.trim().length === 0 ? "" : line.slice(sharedIndent.length))).join("\n"),
+    lineOffset,
+  };
+}
+
+function trimOuterBlankLines(lines: string[]): { lines: string[]; lineOffset: number } {
   let firstContentLine = 0;
   while (firstContentLine < lines.length && lines[firstContentLine]?.trim().length === 0) {
     firstContentLine += 1;
@@ -16,7 +23,10 @@ function trimOuterBlankLines(lines: string[]): string[] {
     lastContentLine -= 1;
   }
 
-  return lines.slice(firstContentLine, lastContentLine + 1);
+  return {
+    lines: lines.slice(firstContentLine, lastContentLine + 1),
+    lineOffset: lastContentLine < firstContentLine ? 0 : firstContentLine,
+  };
 }
 
 function commonLeadingWhitespacePrefix(lines: readonly string[]): string {

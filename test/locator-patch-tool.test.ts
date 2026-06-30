@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { hashLine, parseText } from "../src/api.js";
 import { patchTool } from "../src/tools/locator-patch.js";
 
-const makePlainTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+async function makePlainTempDir() {
+  const dir = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+  process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  return dir;
+}
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
 
@@ -100,6 +104,31 @@ async function patchFile(initialText: string, diff: string, path = "file.txt") {
 }
 
 describe("patch visible status", () => {
+  it("applies patch input starting at the file operation section", async () => {
+    const dir = await makeTempDir();
+    const file = join(dir, "file.txt");
+    await writeFile(file, "old\n");
+
+    const result = await patchTool.execute(
+      "tool-call",
+      {
+        patch: [
+          "*** Update File: file.txt",
+          "@@",
+          row("-", "old"),
+          row("+", "new"),
+        ].join("\n"),
+        receipt: "hash",
+      },
+      undefined,
+      undefined,
+      { cwd: dir } as never,
+    );
+
+    expect(resultText(result)).toContain("*** Update File: file.txt");
+    await expect(readFile(file, "utf8")).resolves.toBe("new\n");
+  });
+
   it("keeps XML tag text aligned with its enclosing tag", () => {
     const description = patchParameterDescription();
 
@@ -110,7 +139,7 @@ describe("patch visible status", () => {
     );
     expect(description).not.toMatch(/^ {4}<content>\n {6}aaaaaaaaaab/m);
     expect(description).toMatch(
-      /^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}\*\*\* End Patch/m,
+      /^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}<\/patch>/m,
     );
   });
 

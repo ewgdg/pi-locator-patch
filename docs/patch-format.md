@@ -17,10 +17,9 @@ Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline
 
 ## Universal patch
 
-Preferred `patch` input is Codex-like and carries file paths. The tool accepts either inline `patch` text or `patch_file`; provide exactly one. `patch_file` paths resolve against the tool cwd; file paths inside the patch also resolve against cwd, not the patch file directory.
+Preferred `patch` input carries file paths in file operation sections. The tool accepts either inline `patch` text or `patch_file`; provide exactly one. `patch_file` paths resolve against the tool cwd; file paths inside the patch also resolve against cwd, not the patch file directory.
 
 ```diff
-*** Begin Patch
 *** Add File: new.txt
 +literal new file line
 *** Update File: existing.txt
@@ -39,7 +38,6 @@ Preferred `patch` input is Codex-like and carries file paths. The tool accepts e
 +literal replacement content
  :end context text
 *** Delete File: old.txt
-*** End Patch
 ```
 
 Supported section headers:
@@ -48,7 +46,7 @@ Supported section headers:
 - `*** Update File: path`
 - `*** Delete File: path`
 
-Patch must start with `*** Begin Patch` and end with `*** End Patch`. Multiple operations may target the same path. File operations apply sequentially: earlier successful operations stay applied if a later non-dry operation fails, and later operations are skipped. During non-dry apply failures, the tool writes a retry patch containing the failed operation plus skipped later operations and includes its path in the error message. Parser failures write the raw malformed input as the retry patch so agents can fix it via `patch_file` without re-emitting the full patch. `dry_run: true` validates the full patch without writing.
+Multiple operations may target the same path. File operations apply sequentially: earlier successful operations stay applied if a later non-dry operation fails, and later operations are skipped. During non-dry apply failures, the tool writes a retry patch containing the failed operation plus skipped later operations and includes its path in the error message. Parser failures write the raw malformed input as the retry patch so agents can fix it via `patch_file` without re-emitting the full patch. `dry_run: true` validates the full patch without writing.
 
 Patch calls can set `markerless_locator` and `receipt`. `profile` is configuration, not a patch parameter.
 
@@ -118,7 +116,6 @@ after
 ```
 
 ```diff
-*** Begin Patch
 *** Update File: existing.txt
 @@
  :before
@@ -126,7 +123,6 @@ after
 -:
  :after
 +
-*** End Patch
 ```
 
 Use ` :` to match a blank context line, `-:` to delete a blank line, and `+` with no following text to insert a blank line.
@@ -142,7 +138,7 @@ after
 
 ## Delete File
 
-Delete sections match Codex syntax and contain no body:
+Delete sections contain no body:
 
 ```diff
 *** Delete File: old.txt

@@ -1,4 +1,4 @@
-import { dedentBlock } from "./dedent.js";
+import { dedentBlockWithLineOffset } from "./dedent.js";
 import { InvalidPatchError } from "./errors.js";
 import { type HashFunction, hashLine } from "./hash.js";
 import { normalizeCombinedTextSelector, parsePatch, type ParsePatchOptions, type Patch } from "./patch-format.js";
@@ -35,24 +35,27 @@ interface SectionHeader {
 }
 
 const SECTION_HEADER_PATTERN = /^\*\*\* (Add|Update|Delete) File: (.+)$/;
+const OPENING_BOUNDARY = "*** Begin Patch";
+const CLOSING_BOUNDARY = "*** End Patch";
 
 export function parseUniversalPatch(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
-  const lines = splitPatchLines(dedentBlock(patchText));
-  if (lines[0] !== "*** Begin Patch") {
-    throw new InvalidPatchError("Universal patch must start with *** Begin Patch.", { inputLine: 1 });
-  }
-  if (lines.at(-1) !== "*** End Patch") {
-    throw new InvalidPatchError("Universal patch must end with *** End Patch.", { inputLine: Math.max(lines.length, 1) });
+  const { lines, lineOffset } = normalizePatchInput(patchText);
+  const hasBoundaries = lines[0] === OPENING_BOUNDARY;
+  if (hasBoundaries && lines.at(-1) !== CLOSING_BOUNDARY) {
+    throw new InvalidPatchError("Patch boundary is incomplete.", { inputLine: lineOffset + Math.max(lines.length, 1) });
   }
 
+  const startIndex = hasBoundaries ? 1 : 0;
+  const endIndex = hasBoundaries ? lines.length - 1 : lines.length;
+
   const operations: UniversalPatchOperation[] = [];
-  let index = 1;
-  while (index < lines.length - 1) {
-    const header = parseSectionHeader(lines[index], index + 1);
+  let index = startIndex;
+  while (index < endIndex) {
+    const header = parseSectionHeader(lines[index], lineOffset + index + 1);
     index += 1;
-    const bodyStartLine = index + 1;
+    const bodyStartLine = lineOffset + index + 1;
     const body: string[] = [];
-    while (index < lines.length - 1 && !isSectionHeader(lines[index])) {
+    while (index < endIndex && !isSectionHeader(lines[index])) {
       body.push(lines[index]);
       index += 1;
     }
@@ -66,13 +69,7 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
 }
 
 export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
-  const normalizedPatchText = dedentBlock(patchText);
-  const normalizedLines = splitPatchLines(normalizedPatchText);
-  const firstMeaningfulLineIndex = normalizedLines.findIndex((line) => line.length > 0);
-  if (normalizedLines[firstMeaningfulLineIndex] !== "*** Begin Patch") {
-    throw new InvalidPatchError("Patch must be a Codex-like universal patch starting with *** Begin Patch.", { inputLine: firstMeaningfulLineIndex === -1 ? 1 : firstMeaningfulLineIndex + 1 });
-  }
-  return parseUniversalPatch(normalizedPatchText, hashFn, options);
+  return parseUniversalPatch(patchText, hashFn, options);
 }
 
 export function serializeUniversalPatch(operations: readonly UniversalPatchOperation[]): string {
@@ -209,4 +206,9 @@ function splitPatchLines(text: string): string[] {
     lines.pop();
   }
   return lines;
+}
+
+function normalizePatchInput(text: string): { lines: string[]; lineOffset: number } {
+  const dedented = dedentBlockWithLineOffset(text);
+  return { lines: splitPatchLines(dedented.text), lineOffset: dedented.lineOffset };
 }

@@ -68,8 +68,6 @@ import { dedentBlock } from "../dedent.js";
 const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   <description>
   Inline patch text. Mutually exclusive with \`patch_file\`.
-  ## Wrappers
-  Patch must start with \`*** Begin Patch\` and end with \`*** End Patch\`.
   ## File Sections
   A patch may contain multiple \`*** Add File\`, \`*** Update File\`, and \`*** Delete File\` sections;
   A file section header includes a file path.
@@ -182,14 +180,12 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       Should use shorter locators like prefix or suffix locators.
       </explanation>
       <patch>
-      *** Begin Patch
       *** Update File: path/to/file.txt
       @@
       -$b
        *c
       -^b
       +new text
-      *** End Patch
       </patch>
       <explanation>
       "$b" locates first line that ends with "b"; this is better than "-:aaaaaaaaaab" bc it is shorter.
@@ -207,7 +203,6 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       after
       </content>
       <patch description="delete one blank line and insert one at the end">
-      *** Begin Patch
       *** Update File: path/to/file.txt
       @@
        :before
@@ -215,7 +210,6 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
       -:
        :after
       +
-      *** End Patch
       </patch>
       <explanation>
       use " :" to match a blank context line, "-:" to delete a blank line, and "+" with no following text to insert a blank line.

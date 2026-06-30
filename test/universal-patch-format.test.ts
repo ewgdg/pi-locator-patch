@@ -43,8 +43,26 @@ describe("universal patch parser", () => {
     expect(parsed.operations.map((operation) => operation.path)).toEqual(["existing.txt", "existing.txt"]);
   });
 
-  it("rejects wrapper-less patches", () => {
-    expect(() => parsePatchInput(["@@", row("-", "old"), row("+", "new")].join("\n"))).toThrow("[E_INVALID_PATCH]");
+  it("accepts file operation sections without patch boundaries", () => {
+    const parsed = parsePatchInput([
+      "*** Update File: existing.txt",
+      "@@",
+      row("-", "old"),
+      row("+", "new")
+    ].join("\n"));
+
+    expect(parsed.operations).toHaveLength(1);
+    expect(parsed.operations[0]).toMatchObject({ kind: "update", path: "existing.txt" });
+  });
+
+  it("keeps input line numbers for indented boundary-free patches", () => {
+    const patch = `
+      
+      *** Add File: added.txt
+      missing prefix
+    `;
+
+    expect(() => parsePatchInput(patch)).toThrow("Line 4: Add File body lines must start with +.");
   });
 
   it("dedents uniformly indented patch input while preserving locator content indentation", () => {

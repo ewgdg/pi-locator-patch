@@ -29,7 +29,7 @@ PI_LOCATOR_PATCH_PROFILE=hash pi    # force hash-line read and hash patch defaul
 
 ## `patch`
 
-`patch` accepts Codex-like universal patch text. Provide exactly one of `patch` or `patch_file`; `patch_file` and file paths inside the patch resolve from the tool cwd. Prefer concise, unique locators over long copied context.
+`patch` accepts file-operation patch text. Provide exactly one of `patch` or `patch_file`; `patch_file` and file paths inside the patch resolve from the tool cwd. Prefer concise, unique locators over long copied context.
 
 ```ts
 {
@@ -44,7 +44,6 @@ PI_LOCATOR_PATCH_PROFILE=hash pi    # force hash-line read and hash patch defaul
 Configured `profile` sets patch defaults. `markerless_locator` default is profile-based (`classic=exact`, `smart=smart`, `hash=hash`) and can be overridden for one call. `receipt` overrides the configured profile receipt default for one call. Retry patches serialize markerless rows back as explicit locators (`:`, `~`, `#`, `^`, `*`) so they do not depend on the original config.
 
 ```diff
-*** Begin Patch
 *** Add File: new.txt
 +literal new file line
 *** Update File: existing.txt
@@ -58,7 +57,6 @@ Configured `profile` sets patch defaults. `markerless_locator` default is profil
 +literal insertion after skipped context
  :end context text
 *** Delete File: old.txt
-*** End Patch
 ```
 
 ### File operations

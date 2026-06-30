@@ -1,10 +1,15 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import piLocatorPatch from "../src/index.js";
 import { patchTool } from "../src/tools/locator-patch.js";
 
 describe("extension registration", () => {
   it("keeps built-in read by default while hiding read_hash/write/edit", async () => {
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
     const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
+    process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-locator-patch-agent-"));
     delete process.env.PI_LOCATOR_PATCH_PROFILE;
     try {
       const registeredTools: string[] = [];
@@ -59,6 +64,7 @@ describe("extension registration", () => {
       expect(activeTools).not.toContain("locator_read");
       expect(activeTools).not.toContain("locator_patch");
     } finally {
+      restoreEnv("PI_CODING_AGENT_DIR", previousAgentDir);
       restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
     }
   });
