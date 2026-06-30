@@ -57,8 +57,13 @@ export interface Patch {
   hunks: Hunk[];
 }
 
-export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, lineOffset = 0): Patch {
+export interface ParsePatchOptions {
+  hashLocatorsEnabled?: boolean;
+}
+
+export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, lineOffset = 0, options: ParsePatchOptions = {}): Patch {
   const lines = splitPatchLines(patchText);
+  const hashLocatorsEnabled = options.hashLocatorsEnabled ?? true;
   let index = 0;
   const hunks: Hunk[] = [];
 
@@ -93,7 +98,7 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, l
       index += 1;
     }
 
-    const ops = parseHunkOperationLines(opLines, hashFn);
+    const ops = parseHunkOperationLines(opLines, hashFn, hashLocatorsEnabled);
     if (ops.length === 0) {
       throw new InvalidPatchError("Hunk must contain at least one operation.", { inputLine: hunkHeaderLine });
     }
@@ -113,12 +118,12 @@ interface PatchOperationLine {
   inputLine: number;
 }
 
-function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction): PatchOp[] {
+function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction, hashLocatorsEnabled: boolean): PatchOp[] {
   return opLines.map((opLine) => {
-    if (hasMissingLocatorMarker(opLine.line)) {
+    if (hasMissingLocatorMarker(opLine.line, hashLocatorsEnabled)) {
       return parseUnifiedDiffOp(opLine.line, hashFn, opLine.inputLine);
     }
-    if (hasOmittedContextOperator(opLine.line)) {
+    if (hasOmittedContextOperator(opLine.line, hashLocatorsEnabled)) {
       return parseSelectorPatchOp("context", opLine.line, opLine.line, opLine.inputLine);
     }
     return parsePatchOp(opLine.line, hashFn, opLine.inputLine);
@@ -155,22 +160,22 @@ function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | unde
   return endLine === undefined ? { line: hintLine } : { line: hintLine, endLine };
 }
 
-function hasMissingLocatorMarker(line: string): boolean {
+function hasMissingLocatorMarker(line: string, hashLocatorsEnabled: boolean): boolean {
   if (line === "") return true;
   if (line.startsWith("+")) return false;
   if (!(line.startsWith(" ") || line.startsWith("-"))) return false;
 
   const selector = line.slice(1);
   if (selector === "") return line.startsWith("-");
-  return !hasLocatorMarker(selector);
+  return !hasLocatorMarker(selector, hashLocatorsEnabled);
 }
 
-function hasOmittedContextOperator(line: string): boolean {
-  return hasLocatorMarker(line);
+function hasOmittedContextOperator(line: string, hashLocatorsEnabled: boolean): boolean {
+  return hasLocatorMarker(line, hashLocatorsEnabled);
 }
 
-function hasLocatorMarker(selector: string): boolean {
-  return selector === "..." || selector.startsWith(":") || selector.startsWith("#") || selector.startsWith("^") || selector.startsWith("*") || selector.startsWith("?") || selector.startsWith("$") || selector.startsWith("~");
+function hasLocatorMarker(selector: string, hashLocatorsEnabled: boolean): boolean {
+  return selector === "..." || selector.startsWith(":") || (hashLocatorsEnabled && selector.startsWith("#")) || selector.startsWith("^") || selector.startsWith("*") || selector.startsWith("?") || selector.startsWith("$") || selector.startsWith("~");
 }
 
 function parseUnifiedDiffOp(line: string, hashFn: HashFunction, inputLine: number): PatchOp {

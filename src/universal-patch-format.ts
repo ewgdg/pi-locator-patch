@@ -1,7 +1,7 @@
 import { dedentBlock } from "./dedent.js";
 import { InvalidPatchError } from "./errors.js";
 import { type HashFunction, hashLine } from "./hash.js";
-import { normalizeCombinedTextSelector, parsePatch, type Patch } from "./patch-format.js";
+import { normalizeCombinedTextSelector, parsePatch, type ParsePatchOptions, type Patch } from "./patch-format.js";
 
 export type UniversalPatchOperation = AddFileOperation | UpdateFileOperation | DeleteFileOperation;
 
@@ -36,7 +36,7 @@ interface SectionHeader {
 
 const SECTION_HEADER_PATTERN = /^\*\*\* (Add|Update|Delete) File: (.+)$/;
 
-export function parseUniversalPatch(patchText: string, hashFn: HashFunction = hashLine): UniversalPatch {
+export function parseUniversalPatch(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
   const lines = splitPatchLines(dedentBlock(patchText));
   if (lines[0] !== "*** Begin Patch") {
     throw new InvalidPatchError("Universal patch must start with *** Begin Patch.", { inputLine: 1 });
@@ -56,7 +56,7 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
       body.push(lines[index]);
       index += 1;
     }
-    operations.push(parseSection(header, body, hashFn, bodyStartLine));
+    operations.push(parseSection(header, body, hashFn, bodyStartLine, options));
   }
 
   if (operations.length === 0) {
@@ -65,14 +65,14 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
   return { operations };
 }
 
-export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine): UniversalPatch {
+export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
   const normalizedPatchText = dedentBlock(patchText);
   const normalizedLines = splitPatchLines(normalizedPatchText);
   const firstMeaningfulLineIndex = normalizedLines.findIndex((line) => line.length > 0);
   if (normalizedLines[firstMeaningfulLineIndex] !== "*** Begin Patch") {
     throw new InvalidPatchError("Patch must be a Codex-like universal patch starting with *** Begin Patch.", { inputLine: firstMeaningfulLineIndex === -1 ? 1 : firstMeaningfulLineIndex + 1 });
   }
-  return parseUniversalPatch(normalizedPatchText, hashFn);
+  return parseUniversalPatch(normalizedPatchText, hashFn, options);
 }
 
 export function serializeUniversalPatch(operations: readonly UniversalPatchOperation[]): string {
@@ -144,7 +144,7 @@ function hashPatchOpPrefix(kind: "context" | "delete"): string {
   return kind === "context" ? " #" : "-#";
 }
 
-function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction, bodyStartLine: number): UniversalPatchOperation {
+function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction, bodyStartLine: number, options: ParsePatchOptions): UniversalPatchOperation {
   if (header.kind === "add") {
     const lines = parseAddFileLines(body, bodyStartLine);
     return { kind: "add", path: header.path, lines, finalNewline: addFileRequiresFinalNewline(lines) };
@@ -155,7 +155,7 @@ function parseSection(header: SectionHeader, body: readonly string[], hashFn: Ha
     return { kind: "delete", path: header.path };
   }
 
-  const patch = parsePatch(body.join("\n"), hashFn, bodyStartLine - 1);
+  const patch = parsePatch(body.join("\n"), hashFn, bodyStartLine - 1, options);
   return { kind: "update", path: header.path, patch };
 }
 

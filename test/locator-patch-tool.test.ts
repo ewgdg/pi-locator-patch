@@ -105,7 +105,7 @@ describe("patch visible status", () => {
       const dir = await makePlainTempDir();
       const file = join(dir, "file.txt");
       await writeFile(file, "old");
-      const patch = ["*** Begin Patch", "*** Update File: file.txt", "@@", row("-", "old"), row("+", "new"), "*** End Patch"].join("\n");
+      const patch = ["*** Begin Patch", "*** Update File: file.txt", "@@", "-:old", row("+", "new"), "*** End Patch"].join("\n");
 
       const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
 
@@ -115,6 +115,50 @@ describe("patch visible status", () => {
       if (previous === undefined) delete process.env.PI_LOCATOR_PATCH_HASH_MODE;
       else process.env.PI_LOCATOR_PATCH_HASH_MODE = previous;
     }
+  });
+
+  it("treats hash-prefixed update rows as unified-diff text when hash mode is off", async () => {
+    process.env.PI_LOCATOR_PATCH_HASH_MODE = "0";
+    const dir = await makePlainTempDir();
+    const file = join(dir, "file.txt");
+    await writeFile(file, "#define X\n#old\n#literal");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: file.txt",
+      "@@",
+      " #define X",
+      "-#old",
+      "+#new",
+      " :#literal",
+      "*** End Patch"
+    ].join("\n");
+
+    const result = await patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never);
+
+    expect(resultText(result)).toBe(["*** Update File: file.txt", "Applied"].join("\n"));
+    await expect(readFile(file, "utf8")).resolves.toBe("#define X\n#new\n#literal");
+  });
+
+  it("rejects bare hash-prefixed update rows when hash mode is off", async () => {
+    process.env.PI_LOCATOR_PATCH_HASH_MODE = "0";
+    const dir = await makePlainTempDir();
+    await writeFile(join(dir, "file.txt"), "#abc");
+    const patch = ["*** Begin Patch", "*** Update File: file.txt", "@@", "#abc", "*** End Patch"].join("\n");
+
+    await expect(patchTool.execute("tool-call", { patch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
+  });
+
+  it("keeps hash locators and malformed hash errors in hash mode", async () => {
+    const dir = await makeTempDir();
+    const file = join(dir, "file.txt");
+    await writeFile(file, "old");
+    const validPatch = ["*** Begin Patch", "*** Update File: file.txt", "@@", row("-", "old"), row("+", "new"), "*** End Patch"].join("\n");
+
+    await patchTool.execute("tool-call", { patch: validPatch }, undefined, undefined, { cwd: dir } as never);
+    await expect(readFile(file, "utf8")).resolves.toBe("new");
+
+    const malformedPatch = ["*** Begin Patch", "*** Update File: file.txt", "@@", " #define X", "*** End Patch"].join("\n");
+    await expect(patchTool.execute("tool-call", { patch: malformedPatch }, undefined, undefined, { cwd: dir } as never)).rejects.toThrow("[E_INVALID_PATCH]");
   });
 
   it("applies update hunks with text-only locators", async () => {

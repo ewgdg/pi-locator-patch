@@ -68,7 +68,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   "$" specifies a suffix locator.
   "*" specifies a contains locator.
   "~" specifies an opt-in smart locator.
-  "#" specifies a hash locator.
+  "#" specifies a hash locator only when hash mode is enabled.
   "?" specifies a combined locator.
   "..." specifies a range locator.
   <shorthand>
@@ -83,7 +83,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   \`$<suffix>\` matches by suffix string.
   \`*<text>\` matches by testing if a line contains the \`<text>\` value.
   \`~<text>\` resolves independently per smart row to exact, prefix/suffix, contains, or line-level whitespace-delimited token-subsequence; the whole hunk applies only with one dominance winner.
-  \`#<hash>\` matches by line hash value; use hash-line \`read\` in hash mode, or prior patch receipts/trusted context, to get current hashes.
+  \`#<hash>\` matches by line hash value only in hash mode; use hash-line \`read\` or prior hash-mode patch receipts to get current hashes.
   \`?<json-obj>\` is a combined locator.
   \`...\` is a range locator; it has no \`<locator_value>\`.
   e.g. \` ~<text>\` or \`~<text>\` means smart context match; \`-~<text>\` means smart delete match.
@@ -107,7 +107,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   <policy>
   <important>Token efficiency is the highest priority.</important>
   Use partial-match-based locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost — roughly >10 chars or >2 words.
-  Use hash locators when a hash is already known for a line.
+  Use hash locators only in hash mode, when a hash is already known for a line.
   Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
   <important>Use range locator whenever possible for hunks > 3 lines.</important>
   Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
@@ -255,27 +255,22 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
     <example description="unified-diff edge cases">
       <content>
       :leading colon
-      #leading hash
       </content>
       <bad_patch_snippet>
       -:leading colon
-       #leading hash
       </bad_patch_snippet>
       <explanation>
       "-:" is treated as exact text locator instead of unified-diff to match the text "leading colon", missing the first ":".
       There is no way to use unified-diff format to match leading ":".
-      Also, " #leading hash" is parsed as anchoring hash locator, which is not intended.
       </explanation>
       <ok_patch_snippet>
       -::leading colon
-      :#leading hash
       </ok_patch_snippet>
       <explanation>
-      leading "-:" or ":" to specify the locator is for exact match.
+      leading "-:" is to delete the exact match.
       </explanation>
       <good_patch_snippet>
       -^:l
-      :^#l
       </good_patch_snippet>
       <explanation>
       spend less tokens with shorter locator.
@@ -342,11 +337,12 @@ export const patchTool = defineTool({
     }
 
     const patchText = await readPatchInput(params.patch, params.patch_file, ctx.cwd);
-    const universalPatch = await parsePatchInputWithRetryPatch(patchText);
+    const hashMode = await isHashModeEnabled(ctx);
+    const universalPatch = await parsePatchInputWithRetryPatch(patchText, hashMode);
     const dryRun = params.dry_run ?? false;
 
     if (dryRun) {
-      return buildPatchToolResult(await planFileChangesForDryRun(ctx.cwd, universalPatch.operations), true, await isHashModeEnabled(ctx));
+      return buildPatchToolResult(await planFileChangesForDryRun(ctx.cwd, universalPatch.operations), true, hashMode);
     }
 
     const plannedChanges: PlannedFileChange[] = [];
@@ -378,7 +374,7 @@ export const patchTool = defineTool({
       }
     }
 
-    return buildPatchToolResult(plannedChanges, false, await isHashModeEnabled(ctx));
+    return buildPatchToolResult(plannedChanges, false, hashMode);
   },
   renderCall(_args, theme, context) {
     return new Text(
@@ -417,7 +413,9 @@ export function setPatchToolHashModeGuideline(hashMode: boolean): void {
 function buildPatchPromptGuidelines(hashMode: boolean): string[] {
   const guidelines = [];
   if (hashMode) {
-    guidelines.push("Hash mode active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes prior `read` and prior patch receipts to avoid unnecessary read.");
+    guidelines.push("Patch tool hash mode active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes prior `read` and prior patch receipts to avoid unnecessary read.");
+  } else {
+    guidelines.push("Patch tool hash mode is off.");
   }
   return guidelines;
 }
@@ -437,9 +435,9 @@ async function readPatchInput(patch: string | undefined, patchFile: string | und
   return text;
 }
 
-async function parsePatchInputWithRetryPatch(patchText: string) {
+async function parsePatchInputWithRetryPatch(patchText: string, hashMode: boolean) {
   try {
-    return parsePatchInput(patchText);
+    return parsePatchInput(patchText, undefined, { hashLocatorsEnabled: hashMode });
   } catch (error) {
     if (!(error instanceof InvalidPatchError)) {
       throw error;

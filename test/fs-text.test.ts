@@ -48,7 +48,7 @@ describe("patch tool", () => {
       const dir = await makeTempDir();
       const file = join(dir, "file.txt");
       await writeFile(file, "old");
-      const diff = ["*** Begin Patch", "*** Update File: file.txt", "@@", row("-", "old"), row("+", "new"), "*** End Patch"].join("\n");
+      const diff = ["*** Begin Patch", "*** Update File: file.txt", "@@", "-:old", row("+", "new"), "*** End Patch"].join("\n");
 
       const result = await patchTool.execute("tool-call", { patch: diff, dry_run: true }, undefined, undefined, { cwd: dir } as never);
 
@@ -69,7 +69,7 @@ describe("patch tool", () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "actual");
-    const diff = ["*** Begin Patch", "*** Update File: file.txt", "@@", row("-", "old"), row("+", "new"), "*** End Patch"].join("\n");
+    const diff = ["*** Begin Patch", "*** Update File: file.txt", "@@", "-:old", row("+", "new"), "*** End Patch"].join("\n");
 
     await expect(
       patchTool.execute("tool-call", { patch: diff }, undefined, undefined, { cwd: dir } as never)

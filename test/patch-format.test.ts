@@ -187,6 +187,25 @@ describe("patch parser", () => {
     ]);
   });
 
+  it("treats hash-prefixed rows as unified-diff text when hash locators are disabled", () => {
+    const parsed = parsePatch(["@@", " #define X", "-#old", "+#new", " :#literal"].join("\n"), undefined, 0, { hashLocatorsEnabled: false });
+
+    expect(parsed.hunks[0].ops).toMatchObject([
+      { kind: "context", content: "#define X", textSelector: "exact", unifiedDiff: true },
+      { kind: "delete", content: "#old", textSelector: "exact", unifiedDiff: true },
+      { kind: "insert", content: "#new" },
+      { kind: "context", content: "#literal", textSelector: "exact" }
+    ]);
+  });
+
+  it("rejects bare hash-prefixed rows when hash locators are disabled", () => {
+    expect(() => parsePatch("@@\n#abc", undefined, 0, { hashLocatorsEnabled: false })).toThrow("[E_INVALID_PATCH]");
+  });
+
+  it("keeps hash locator errors strict when hash locators are enabled", () => {
+    expect(() => parsePatch("@@\n #define X", undefined, 0, { hashLocatorsEnabled: true })).toThrow("[E_INVALID_PATCH]");
+  });
+
   it("rejects bare unified-diff context rows", () => {
     expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
   });

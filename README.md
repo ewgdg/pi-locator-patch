@@ -89,7 +89,7 @@ Locators:
 - `~<text>` opt-in smart text locator for context/delete rows.
 - `...` range between surrounding matchers: ` ...` preserves, `-...` deletes.
 
-Hash prefix locator `#<hash>` is preferred in hash mode when `read` supplies a visible hash. In default mode, prefer text locators; use hash locators only for hashes already known from prior receipts or other trusted context. Use text locators when a line has no visible hash or when content predicates are clearer.
+Hash prefix locator `#<hash>` is available only in hash mode when `read` supplies a visible hash or a prior hash-mode receipt exposes one. In default mode, `#` is not a locator marker; ` #define X` and `-#old` are unified-diff exact text rows. Use text locators when a line has no visible hash or when content predicates are clearer.
 Context locator rows may start with a literal space, or omit it. For example, `^prefix` is equivalent to ` ^prefix`, `~target text` is equivalent to ` ~target text`, and `...` is equivalent to ` ...`. Use ` :` or `:` for exact text, including indented lines.
 
 Smart `~` locators are explicit only: ` ~target text` or `~target text` for context, `-~old text` for delete. `+~literal` inserts literal `~literal`. For each candidate hunk span, each smart row independently resolves to its strongest line-level match: exact, prefix/suffix, contains, then whitespace token-subsequence. Prefix and suffix have the same rank, but audit records the actual resolved kind. The whole hunk applies only when dominance leaves one non-dominated candidate; tradeoffs or equal score vectors are ambiguous, and zero candidates are stale. Broad prefix/suffix/contains matches require useful nonblank alphanumeric text; token-subsequence also needs at least two query tokens.
