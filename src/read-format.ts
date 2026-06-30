@@ -14,7 +14,7 @@ export function renderHashLines(entries: readonly HashLineEntry[]): string {
   return entries
     .map(({ hash, content }) => {
       const width = hashLengthForLine(content);
-      return `${width === 0 ? "" : hash.slice(0, width)}${HASH_SEPARATOR}${content}`;
+      return `${hash.slice(0, width)}${HASH_SEPARATOR}${content}`;
     })
     .join("\n");
 }
@@ -27,7 +27,7 @@ export function parseHashLine(text: string): HashLineEntry {
 
   const hash = text.slice(0, separatorIndex);
   if (!isHash(hash)) {
-    throw new InvalidPatchError("Malformed locator: invalid 3- or 4-character base64url hash.");
+    throw new InvalidPatchError("Malformed locator: invalid 1- to 4-character base64url hash.");
   }
 
   return { hash, content: text.slice(separatorIndex + HASH_SEPARATOR.length) };

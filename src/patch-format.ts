@@ -382,7 +382,7 @@ function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, _line: stri
 
 function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, _line: string, inputLine: number): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 3 or 4 base64url characters after #.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 1 to 4 base64url characters after #.`, { inputLine });
   }
   return { kind, hash, inputLine, authoredCharCount: _line.length };
 }

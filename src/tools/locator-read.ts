@@ -26,7 +26,7 @@ function createLocatorReadTool(toolName: LocatorReadToolName) {
   return defineTool({
     name: toolName,
     label: toolName === "read" ? "Read" : "Read Hash",
-    description: "Read text lines for patching. Eligible lines render as HASH│content; short or low-entropy lines render as │content without a hash.",
+    description: "Read text lines for patching. Lines render as 1- to 4-character HASH│content, with hash width chosen from line entropy.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "Text file path to read." }),

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const HASH_WIDTH = 4;
 export const HASH_SEPARATOR = "│";
-export const HASH_PATTERN = /^[A-Za-z0-9_-]{3,4}$/;
+export const HASH_PATTERN = /^[A-Za-z0-9_-]{1,4}$/;
 
 export type HashFunction = (content: string) => string;
 
@@ -20,11 +20,10 @@ export function entropy(content: string): number {
   return Math.min(24, Math.log2(new Set(trimmed).size + 1) * Math.log2(trimmed.length + 1));
 }
 
-export function hashLengthForLine(content: string): 0 | 3 | 4 {
-  if (content.trim().length < 8) return 0;
-
+export function hashLengthForLine(content: string): 1 | 2 | 3 | 4 {
   const bits = entropy(content);
-  if (bits < 10) return 0;
-  if (bits < 20) return 3;
+  if (bits < 4) return 1;
+  if (bits < 10) return 2;
+  if (bits < 24) return 3;
   return 4;
 }

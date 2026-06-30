@@ -31,8 +31,8 @@ describe("read_hash tool", () => {
 
     expect(readHashTool.name).toBe("read_hash");
     expect(firstText(result)).toBe([
-      "│short",
-      "│",
+      `${hashLine("short").slice(0, 2)}│short`,
+      `${hashLine("").slice(0, 1)}│`,
       `${hashLine("const enabled = true;").slice(0, 3)}│const enabled = true;`,
       `${hashLine("function parsePatchOp(line: string): PatchOp {")}│function parsePatchOp(line: string): PatchOp {`
     ].join("\n"));
@@ -62,7 +62,7 @@ describe("read_hash tool", () => {
     expect(callText).toContain("read_hash");
     expect(callText).not.toContain("<b>read</b>");
     expect(collapsedResult).toBe("");
-    expect(expandedResult).toContain("│short");
+    expect(expandedResult).toContain(`${hashLine("short").slice(0, 2)}│short`);
     expect(expandedResult).toContain(`${hashLine("const enabled = true;").slice(0, 3)}│const enabled = true;`);
   });
 

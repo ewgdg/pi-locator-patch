@@ -20,9 +20,10 @@ describe("hashLine", () => {
   });
 
   it("chooses visible hash lengths from trimmed length and entropy", () => {
-    expect(hashLengthForLine("short")).toBe(0);
-    expect(hashLengthForLine("        }")).toBe(0);
-    expect(hashLengthForLine("aaaaaaaaaaaaaaaa")).toBe(0);
+    expect(hashLengthForLine("")).toBe(1);
+    expect(hashLengthForLine("        }")).toBe(1);
+    expect(hashLengthForLine("short")).toBe(2);
+    expect(hashLengthForLine("aaaaaaaaaaaaaaaa")).toBe(2);
     expect(hashLengthForLine("const enabled = true;")).toBe(3);
     expect(hashLengthForLine("function parsePatchOp(line: string): PatchOp {")).toBe(4);
     expect(entropy(" alpha ")).toBe(entropy("alpha"));
