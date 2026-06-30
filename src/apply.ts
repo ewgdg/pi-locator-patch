@@ -186,9 +186,9 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
   const matchOps = hunk.ops.filter(isMatchOp);
   const searchStart = getAnchorSearchStart(hunk);
   const searchEnd = getAnchorSearchEnd(hunk);
-  const resolvedMatch = findResolvedHunkMatch(currentEntries, hunk, matchOps, searchStart, searchEnd, hunkIndex);
+  const resolvedMatch = findResolvedHunkMatch(currentEntries, hunk, matchOps, searchStart, searchEnd);
   if (!resolvedMatch) {
-    throw new StaleHunkError(`Hunk ${hunkIndex} not found${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
+    throw new StaleHunkError(`Hunk not found${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
   }
 
   const { match } = resolvedMatch;
@@ -358,8 +358,7 @@ function findResolvedHunkMatch(
   hunk: Hunk,
   matchOps: readonly MatchPatchOp[],
   searchStart: number,
-  searchEnd: number | undefined,
-  hunkIndex: number
+  searchEnd: number | undefined
 ): ResolvedHunkMatch | undefined {
   if (!hunkHasSmartLocator(hunk)) {
     const matches = hunkHasSparseRange(hunk)
@@ -367,7 +366,7 @@ function findResolvedHunkMatch(
       : findContiguousMatches(entries, matchOps, searchStart, searchEnd).map((start) => contiguousMatchToSparseMatch(hunk.ops, start));
 
     if (matches.length > 1) {
-      throw new AmbiguousHunkError(`Hunk ${hunkIndex} matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
+      throw new AmbiguousHunkError(`Hunk matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
     }
     if (matches.length === 1) {
       return { match: matches[0], smartMatcherKinds: new Map() };
@@ -380,13 +379,13 @@ function findResolvedHunkMatch(
     : findContiguousSmartMatchCandidates(entries, hunk.ops, searchStart, searchEnd);
 
   if (candidates.length > SMART_MATCH_CANDIDATE_LIMIT) {
-    throw new AmbiguousHunkError(`Hunk ${hunkIndex} exceeded smart match candidate cap (${SMART_MATCH_CANDIDATE_LIMIT})${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
+    throw new AmbiguousHunkError(`Hunk exceeded smart match candidate cap (${SMART_MATCH_CANDIDATE_LIMIT})${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
   }
   if (candidates.length === 0) return undefined;
 
   const bestCandidates = nonDominatedSmartCandidates(candidates, smartOpIndexes(hunk.ops));
   if (bestCandidates.length !== 1) {
-    throw new AmbiguousHunkError(`Hunk ${hunkIndex} matched ${candidates.length} smart candidates with ${bestCandidates.length} non-dominated winners${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
+    throw new AmbiguousHunkError(`Hunk matched ${candidates.length} smart candidates with ${bestCandidates.length} non-dominated winners${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
   }
   return bestCandidates[0];
 }

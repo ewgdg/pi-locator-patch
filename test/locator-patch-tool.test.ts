@@ -832,9 +832,34 @@ describe("patch visible status", () => {
         cwd: dir,
       } as never),
     );
-    expect(message).toContain("[E_STALE_HUNK] Line 4: Hunk 1 not found.");
+    expect(message).toContain("[E_STALE_HUNK] Line 4: Hunk not found.");
     expect(message).not.toContain("match pattern");
     expect(message).not.toContain(longLocator);
+  });
+
+  it("omits stale hunk numbers because they are local to each Update section", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "a.txt"), "old");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      row("-", "old"),
+      row("+", "new"),
+      "*** Update File: a.txt",
+      "@@",
+      row("-", "absent"),
+      row("+", "replacement"),
+      "*** End Patch",
+    ].join("\n");
+
+    const message = await rejectionMessage(
+      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+        cwd: dir,
+      } as never),
+    );
+    expect(message).toContain("[E_STALE_HUNK] Line 8: Hunk not found.");
+    expect(message).not.toContain("Hunk 1 not found");
   });
 
   it("keeps earlier aliased Delete File success and writes failed-tail retry patch", async () => {
