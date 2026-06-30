@@ -2,29 +2,29 @@
 
 Pi extension for token-efficient file edits using explicit locator patches.
 
-The package registers `patch` for multi-file add/update/delete patch application. In hash mode, the hash-line reader is exposed as `read`; outside hash mode, `read_hash` stays hidden and built-in `read` stays active.
+The package registers `patch` for multi-file add/update/delete patch application. Only `profile: "hash"` exposes the hash-line reader as `read`; otherwise `read_hash` stays hidden and built-in `read` stays active.
 
 Core design: keep patches short while staying exact. Use concise locators and ` ...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
 
-On session start, the extension removes mutable built-in tools (`edit`, `write`), `read_hash`, and old locator tool names. Built-in `read` remains active unless hash mode is explicitly enabled; then hash-line `read` replaces it.
+On session start, the extension removes mutable built-in tools (`edit`, `write`), `read_hash`, and old locator tool names. Built-in `read` remains active unless `profile: "hash"` is enabled; then hash-line `read` replaces it.
 
-## Hash mode opt-in
+## Profiles
 
-Hash mode makes hash-line `read` the only read path and changes patch success output to a compact hash receipt.
+Profiles control session defaults and read registration. `classic` keeps built-in `read` and exact/status patch defaults. `smart` keeps built-in `read` and makes markerless patch rows smart by default. `hash` replaces built-in `read` with hash-line `read` and uses hash/hash patch defaults.
 
 Enable in `~/.pi/agent/extensions/pi-locator-patch/config.json`:
 
 ```json
 {
-  "hashMode": true
+  "profile": "smart"
 }
 ```
 
 Quick switch for testing:
 
 ```bash
-PI_LOCATOR_PATCH_HASH_MODE=1 pi   # force hash mode
-PI_LOCATOR_PATCH_HASH_MODE=0 pi   # force default mode
+PI_LOCATOR_PATCH_PROFILE=smart pi   # force smart patch defaults
+PI_LOCATOR_PATCH_PROFILE=hash pi    # force hash-line read and hash patch defaults
 ```
 
 ## `patch`
@@ -36,8 +36,12 @@ PI_LOCATOR_PATCH_HASH_MODE=0 pi   # force default mode
   patch?: string;
   patch_file?: string;
   dry_run?: boolean;
+  markerless_locator?: "exact" | "unified-diff" | "smart" | "hash" | "prefix" | "contains";
+  receipt?: "status" | "hash";
 }
 ```
+
+Configured `profile` sets patch defaults. `markerless_locator` default is profile-based (`classic=exact`, `smart=smart`, `hash=hash`) and can be overridden for one call. `receipt` overrides the configured profile receipt default for one call. Retry patches serialize markerless rows back as explicit locators (`:`, `~`, `#`, `^`, `*`) so they do not depend on the original config.
 
 ```diff
 *** Begin Patch
@@ -79,6 +83,8 @@ Rows inside update hunks:
 - `-<locator>` — delete matched line.
 - `+<content>` — insert literal line content.
 
+When a context/delete row has no locator marker, `markerless_locator` decides how to parse it. Default `exact` preserves current unified-diff exact behavior (` text` / `-text`; bare exact context is invalid). Non-exact defaults also allow bare markerless context rows, e.g. `target text` under configured `profile: "smart"` means smart context.
+
 Locators:
 
 - `:<text>` exact line text, e.g. ` :const x = 1;`
@@ -89,16 +95,16 @@ Locators:
 - `~<text>` opt-in smart text locator for context/delete rows.
 - `...` range between surrounding matchers: ` ...` preserves, `-...` deletes.
 
-Hash prefix locator `#<hash>` is available only in hash mode when `read` supplies a visible hash or a prior hash-mode receipt exposes one. In default mode, `#` is not a locator marker; ` #define X` and `-#old` are unified-diff exact text rows. Use text locators when a line has no visible hash or when content predicates are clearer.
+Hash prefix locator `#<hash>` is enabled by `receipt: "hash"`, `profile: "hash"`, or `markerless_locator: "hash"`. In default classic/status mode, `#` is not a locator marker; ` #define X` and `-#old` are unified-diff exact text rows. Use text locators when a line has no visible hash or when content predicates are clearer.
 Context locator rows may start with a literal space, or omit it. For example, `^prefix` is equivalent to ` ^prefix`, `~target text` is equivalent to ` ~target text`, and `...` is equivalent to ` ...`. Use ` :` or `:` for exact text, including indented lines.
 
-Smart `~` locators are explicit only: ` ~target text` or `~target text` for context, `-~old text` for delete. `+~literal` inserts literal `~literal`. For each candidate hunk span, each smart row independently resolves to its strongest line-level match: exact, prefix/suffix, contains, then whitespace token-subsequence. Prefix and suffix have the same rank, but audit records the actual resolved kind. The whole hunk applies only when dominance leaves one non-dominated candidate; tradeoffs or equal score vectors are ambiguous, and zero candidates are stale. Broad prefix/suffix/contains matches require useful nonblank alphanumeric text; token-subsequence also needs at least two query tokens.
+Explicit smart locators use ` ~target text` or `~target text` for context, `-~old text` for delete. Configured `profile: "smart"` or per-call `markerless_locator: "smart"` makes markerless context/delete rows smart. `+~literal` inserts literal `~literal`. For each candidate hunk span, each smart row independently resolves to its strongest line-level match: exact, prefix/suffix, contains, then whitespace token-subsequence. Prefix and suffix have the same rank, but audit records the actual resolved kind. The whole hunk applies only when dominance leaves one non-dominated candidate; tradeoffs or equal score vectors are ambiguous, and zero candidates are stale. Broad prefix/suffix/contains matches require useful nonblank alphanumeric text; token-subsequence also needs at least two query tokens.
 
-Malformed unified-diff rows are tolerated per matcher. A context/delete row without a locator marker treats text after ` ` or `-` as exact line content; bare unified-diff context text without leading space is invalid. Locator matching runs once; zero matches are stale and multiple matches are ambiguous. Within one `*** Update File` section, later hunks may match or span only untouched original target lines. They cannot anchor on or range across lines inserted or already used by earlier hunks in the same section. Use a later `*** Update File` section when a second edit must depend on prior output.
+Malformed unified-diff rows are tolerated per matcher in classic exact mode. Locator matching runs once; zero matches are stale and multiple matches are ambiguous. Within one `*** Update File` section, later hunks may match or span only untouched original target lines. They cannot anchor on or range across lines inserted or already used by earlier hunks in the same section. Use a later `*** Update File` section when a second edit must depend on prior output.
 
 ### Output and failure behavior
 
-With hash mode enabled, success output is a compact hash-only receipt. Context rows show only hashes, inserted rows show `+HASH`, and deleted rows are omitted:
+With `profile: "hash"` or `receipt: "hash"`, success output is a compact hash-only receipt. Context rows show only hashes, inserted rows show `+HASH`, and deleted rows are omitted:
 
 ```text
 *** Add File: new.txt
@@ -112,6 +118,6 @@ With hash mode enabled, success output is a compact hash-only receipt. Context r
 Deleted file
 ```
 
-If this receipt is too large, output falls back to compact status rows. Dry runs return the same receipt shape without writing. Without hash mode, success output is compact status rows only.
+If this receipt is too large, output falls back to compact status rows. Dry runs return the same receipt shape without writing. With status receipt, success output is compact status rows only.
 
 File operations apply sequentially. If a later non-dry operation fails, earlier successful operations stay applied, later operations are skipped, and the error includes a **retry patch** file containing the unapplied operations. Agents can later reuse the retry patch file to avoid re-emitting large output tokens.

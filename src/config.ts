@@ -3,19 +3,30 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface LocatorPatchConfig {
-  hashMode: boolean;
+  profile: LocatorPatchProfile;
 }
 
-const ENV_HASH_MODE = "PI_LOCATOR_PATCH_HASH_MODE";
-const EXTENSION_CONFIG_PATH = ["extensions", "pi-locator-patch", "config.json"] as const;
+export type LocatorPatchProfile = "classic" | "smart" | "hash";
+
+const ENV_PROFILE = "PI_LOCATOR_PATCH_PROFILE";
+const EXTENSION_CONFIG_PATH = [
+  "extensions",
+  "pi-locator-patch",
+  "config.json",
+] as const;
 
 export async function readLocatorPatchConfig(): Promise<LocatorPatchConfig> {
   const globalConfig = await readConfigJson(globalConfigPath());
-  return { hashMode: readEnvHashMode() ?? readHashMode(globalConfig) ?? false };
+  const explicitProfile = readEnvProfile() ?? readProfile(globalConfig);
+  const profile = explicitProfile ?? "classic";
+  return { profile };
 }
 
 function globalConfigPath(): string {
-  return join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), ...EXTENSION_CONFIG_PATH);
+  return join(
+    process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+    ...EXTENSION_CONFIG_PATH,
+  );
 }
 
 async function readConfigJson(path: string): Promise<unknown> {
@@ -26,16 +37,24 @@ async function readConfigJson(path: string): Promise<unknown> {
   }
 }
 
-function readHashMode(config: unknown): boolean | undefined {
+function readProfile(config: unknown): LocatorPatchProfile | undefined {
   if (!isObject(config)) return undefined;
-  return typeof config.hashMode === "boolean" ? config.hashMode : undefined;
+  return parseProfile(config.profile);
 }
 
-function readEnvHashMode(): boolean | undefined {
-  const value = process.env[ENV_HASH_MODE]?.trim().toLowerCase();
-  if (!value) return undefined;
-  if (["1", "true", "yes", "on", "hash"].includes(value)) return true;
-  if (["0", "false", "no", "off", "plain"].includes(value)) return false;
+function readEnvProfile(): LocatorPatchProfile | undefined {
+  return parseProfile(process.env[ENV_PROFILE]);
+}
+
+function parseProfile(value: unknown): LocatorPatchProfile | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "classic" ||
+    normalized === "smart" ||
+    normalized === "hash"
+  )
+    return normalized;
   return undefined;
 }
 

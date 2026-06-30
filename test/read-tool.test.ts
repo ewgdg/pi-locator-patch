@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hashLine } from "../src/api.js";
-import { hashModeReadTool, readHashTool } from "../src/tools/locator-read.js";
+import { hashProfileReadTool, readHashTool } from "../src/tools/locator-read.js";
 
 const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
 
@@ -66,11 +66,11 @@ describe("read_hash tool", () => {
     expect(expandedResult).toContain(`${hashLine("const enabled = true;").slice(0, 3)}│const enabled = true;`);
   });
 
-  it("can expose the same hash reader as read for hash mode", async () => {
+  it("can expose the same hash reader as read for hash profile", async () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, "file"), "const enabled = true;\n");
     const args = { path: "file" };
-    const result = await hashModeReadTool.execute("tool-call", args, undefined, undefined, { cwd: dir } as never);
+    const result = await hashProfileReadTool.execute("tool-call", args, undefined, undefined, { cwd: dir } as never);
     const context = {
       args,
       cwd: dir,
@@ -79,9 +79,9 @@ describe("read_hash tool", () => {
       isError: false
     } as never;
 
-    const callText = renderText(hashModeReadTool.renderCall?.(args, theme as never, context) as never);
+    const callText = renderText(hashProfileReadTool.renderCall?.(args, theme as never, context) as never);
 
-    expect(hashModeReadTool.name).toBe("read");
+    expect(hashProfileReadTool.name).toBe("read");
     expect(callText).toContain("<b>read</b>");
     expect(callText).not.toContain("read_hash");
     expect(firstText(result)).toBe(`${hashLine("const enabled = true;").slice(0, 3)}│const enabled = true;`);

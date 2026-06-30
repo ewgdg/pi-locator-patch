@@ -4,7 +4,8 @@ import {
   StaleHunkError,
   UnsupportedHunkError,
   applyPatchToText,
-  hashLine
+  hashLine,
+  parsePatch
 } from "../src/api.js";
 
 const row = (prefix: " " | "-" | "+", content: string, hashFn = hashLine) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashFn(content)}`;
@@ -363,6 +364,15 @@ describe("applyPatchToText", () => {
     expect(result.text).toBe("replacement\ntarget text plus");
     expect(result.hunkAudits[0].matchPattern).toEqual(["-~target text"]);
     expect(result.hunkAudits[0].matcherKinds).toEqual(["exact"]);
+  });
+
+  it("applies parsed markerless smart markerless locators", () => {
+    const parsed = parsePatch(["@@", "alpha exact", "-contains target", "+replacement"].join("\n"), undefined, 0, { markerlessLocator: "smart" });
+    const result = applyPatchToText("alpha exact\nprefix contains target suffix", parsed);
+
+    expect(result.text).toBe("alpha exact\nreplacement");
+    expect(result.hunkAudits[0].matchPattern).toEqual([" ~alpha exact", "-~contains target"]);
+    expect(result.hunkAudits[0].matcherKinds).toEqual(["exact", "contains"]);
   });
 
   it("resolves each smart row independently and audits per-row matcher kind", () => {

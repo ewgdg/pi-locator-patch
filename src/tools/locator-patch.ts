@@ -1,14 +1,34 @@
 import { constants } from "node:fs";
-import { access, mkdtemp, realpath, writeFile as writeRawFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  realpath,
+  writeFile as writeRawFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { defineTool, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  withFileMutationQueue,
+} from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
-import { readLocatorPatchConfig } from "../config.js";
-import { renderPatchHashReceiptDiffs, renderPatchTranscriptDiffs, type PatchTranscriptDiffInput } from "../content-diff.js";
-import { FileTextError, InvalidPatchError, PartialPatchError } from "../errors.js";
+import {
+  readLocatorPatchConfig,
+  type LocatorPatchConfig,
+  type LocatorPatchProfile,
+} from "../config.js";
+import {
+  renderPatchHashReceiptDiffs,
+  renderPatchTranscriptDiffs,
+  type PatchTranscriptDiffInput,
+} from "../content-diff.js";
+import {
+  FileTextError,
+  InvalidPatchError,
+  PartialPatchError,
+} from "../errors.js";
 import {
   assertExistingTextFileMutationTarget,
   assertNewTextFileTarget,
@@ -18,12 +38,31 @@ import {
   resolveToolPath,
   resolveNewTextFileTarget,
   writeNewTextFileAtomically,
-  writeTextFileAtomically
+  writeTextFileAtomically,
 } from "../fs-text.js";
-import { countRenderedLines, getVisibleOutputOverflow, type VisibleOutputOverflow } from "../output-size.js";
+import {
+  countRenderedLines,
+  getVisibleOutputOverflow,
+  type VisibleOutputOverflow,
+} from "../output-size.js";
+import {
+  normalizeMarkerlessLocator,
+  type MarkerlessLocatorKind,
+  type MarkerlessLocatorOption,
+  type ParsePatchOptions,
+} from "../patch-format.js";
 import { parseText, serializeText } from "../text-lines.js";
-import { parsePatchInput, serializeUniversalPatch, type AddFileOperation, type UniversalPatchOperation } from "../universal-patch-format.js";
-import { buildPatchCallRenderText, buildPatchResultRenderText, getPatchResultText } from "./patch-render.js";
+import {
+  parsePatchInput,
+  serializeUniversalPatch,
+  type AddFileOperation,
+  type UniversalPatchOperation,
+} from "../universal-patch-format.js";
+import {
+  buildPatchCallRenderText,
+  buildPatchResultRenderText,
+  getPatchResultText,
+} from "./patch-render.js";
 import { dedentBlock } from "../dedent.js";
 
 const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
@@ -68,13 +107,14 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   "$" specifies a suffix locator.
   "*" specifies a contains locator.
   "~" specifies an opt-in smart locator.
-  "#" specifies a hash locator only when hash mode is enabled.
+  "#" specifies a hash locator when hash locators are enabled.
   "?" specifies a combined locator.
   "..." specifies a range locator.
   <shorthand>
-  If no locator marker follows the operator, the row is parsed as unified-diff form for exact text match.
-  e.g. \` text\` is exact context, \`-text\` is exact delete.
-  Bare exact context text without leading space, e.g. \`text\`, is invalid.
+  If no locator marker follows the operator, \`markerless_locator\` controls the row. Default \`exact\` preserves unified-diff exact text matching.
+  e.g. by default \` text\` is exact context and \`-text\` is exact delete.
+  With non-exact defaults, bare rows without operator are markerless context rows.
+  Bare exact context text without leading space, e.g. \`text\`, is invalid under default \`exact\`.
   To match literal text starting with a reserved locator marker, keep an explicit locator marker.
   </shorthand>
   ##### Locator Values
@@ -83,7 +123,7 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   \`$<suffix>\` matches by suffix string.
   \`*<text>\` matches by testing if a line contains the \`<text>\` value.
   \`~<text>\` resolves independently per smart row to exact, prefix/suffix, contains, or line-level whitespace-delimited token-subsequence; the whole hunk applies only with one dominance winner.
-  \`#<hash>\` matches by line hash value only in hash mode; use hash-line \`read\` or prior hash-mode patch receipts to get current hashes.
+  \`#<hash>\` matches by line hash value when hash locators are enabled by \`receipt: "hash"\`, \`profile: "hash"\`, or \`markerless_locator: "hash"\`; use hash-line \`read\` under hash profile or prior hash receipts to get current hashes.
   \`?<json-obj>\` is a combined locator.
   \`...\` is a range locator; it has no \`<locator_value>\`.
   e.g. \` ~<text>\` or \`~<text>\` means smart context match; \`-~<text>\` means smart delete match.
@@ -107,11 +147,11 @@ const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
   <policy>
   <important>Token efficiency is the highest priority.</important>
   Use partial-match-based locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost — roughly >10 chars or >2 words.
-  Use hash locators only in hash mode, when a hash is already known for a line.
+  Use hash locators only when hash locators are enabled and a hash is already known for a line.
   Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
   <important>Use range locator whenever possible for hunks > 3 lines.</important>
   Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
-  Avoid exact text locators and unified-diff format unless absolutely necessary to disambiguate hunk matches.
+  Avoid exact text locators and unified-diff format unless absolutely necessary to disambiguate hunk matches; prefer \`profile: "smart"\` or explicit \`~\` for markerless smart matching when safe.
   Increasing the hunk context range with shorter locators for unambiguous anchoring is usually more efficient than using exact text matches or unified-diff for long lines.
   If the tool returns a retry patch file containing large chunks of unapplied operations due to failures. Try fixing the retry patch file and passing it via \`patch_file\` instead of re-emitting large patch text to save tokens.
   </policy>
@@ -311,38 +351,60 @@ interface DryRunFileState {
   text?: string;
 }
 
+type PatchReceiptMode = "status" | "hash";
+
+interface PatchExecutionOptions {
+  parseOptions: ParsePatchOptions;
+  receipt: PatchReceiptMode;
+}
+
+interface PatchProfileDefaults {
+  markerlessLocator: MarkerlessLocatorKind;
+  receipt: PatchReceiptMode;
+}
+
+const PATCH_PROFILE_DEFAULTS: Record<
+  LocatorPatchProfile,
+  PatchProfileDefaults
+> = {
+  classic: { markerlessLocator: "exact", receipt: "status" },
+  smart: { markerlessLocator: "smart", receipt: "status" },
+  hash: { markerlessLocator: "hash", receipt: "hash" },
+};
+
 export const patchTool = defineTool({
   name: "patch",
   label: "Locator Patch",
-  description: "Token-efficient tool for editing files with multi-file-capable add/update/delete patches.",
-  promptSnippet: "Use this tool for patching. Pick the locator costing the least.",
-  promptGuidelines: buildPatchPromptGuidelines(false),
-  parameters: Type.Object(
-    {
-      patch: Type.Optional(
-        Type.String({
-          description: PATCH_PARAMETER_DESCRIPTION
-        })
-      ),
-      patch_file: Type.Optional(
-        Type.String({ description: "Path to a UTF-8 patch file. Mutually exclusive with `patch`. Relative paths resolve against cwd." })
-      ),
-      dry_run: Type.Optional(Type.Boolean({ description: "Validate/apply in memory and do not write." }))
-    },
-    { additionalProperties: false }
-  ),
+  description:
+    "Token-efficient tool for editing files with multi-file-capable add/update/delete patches.",
+  promptSnippet:
+    "Use this tool for patching. Pick the locator costing the least.",
+  promptGuidelines: buildPatchPromptGuidelines("classic"),
+  parameters: buildPatchToolParameters("classic"),
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     if (signal?.aborted) {
       throw new Error("Cancelled");
     }
 
-    const patchText = await readPatchInput(params.patch, params.patch_file, ctx.cwd);
-    const hashMode = await isHashModeEnabled(ctx);
-    const universalPatch = await parsePatchInputWithRetryPatch(patchText, hashMode);
+    const patchText = await readPatchInput(
+      params.patch,
+      params.patch_file,
+      ctx.cwd,
+    );
+    const config = await readLocatorPatchConfig();
+    const executionOptions = resolvePatchExecutionOptions(params, config);
+    const universalPatch = await parsePatchInputWithRetryPatch(
+      patchText,
+      executionOptions.parseOptions,
+    );
     const dryRun = params.dry_run ?? false;
 
     if (dryRun) {
-      return buildPatchToolResult(await planFileChangesForDryRun(ctx.cwd, universalPatch.operations), true, hashMode);
+      return buildPatchToolResult(
+        await planFileChangesForDryRun(ctx.cwd, universalPatch.operations),
+        true,
+        executionOptions.receipt,
+      );
     }
 
     const plannedChanges: PlannedFileChange[] = [];
@@ -355,26 +417,32 @@ export const patchTool = defineTool({
         const change = await applyOperationSequentially(ctx.cwd, operation);
         plannedChanges.push(change);
       } catch (error) {
-        const retryPatchPath = await writeRetryPatch(universalPatch.operations.slice(index));
+        const retryPatchPath = await writeRetryPatch(
+          universalPatch.operations.slice(index),
+        );
         const partialError = new PartialPatchError(
           renderSequentialFailureMessage({
             appliedChanges: plannedChanges,
             failedOperation: operation,
             skippedOperations: universalPatch.operations.slice(index + 1),
             retryPatchPath,
-            cause: error
-          })
+            cause: error,
+          }),
         );
         Object.assign(partialError, {
           appliedOperationCount: plannedChanges.length,
           failedOperationIndex: index,
-          retryPatchPath
+          retryPatchPath,
         });
         throw partialError;
       }
     }
 
-    return buildPatchToolResult(plannedChanges, false, hashMode);
+    return buildPatchToolResult(
+      plannedChanges,
+      false,
+      executionOptions.receipt,
+    );
   },
   renderCall(_args, theme, context) {
     return new Text(
@@ -382,10 +450,10 @@ export const patchTool = defineTool({
         input: context.args,
         expanded: context.expanded,
         argsComplete: context.argsComplete,
-        theme
+        theme,
       }),
       0,
-      0
+      0,
     );
   },
   renderResult(result, { expanded, isPartial }, theme, context) {
@@ -398,33 +466,127 @@ export const patchTool = defineTool({
         isPartial,
         isError: context.isError || resultText?.startsWith("Error") === true,
         errorInput: context.args,
-        theme
+        theme,
       }),
       0,
-      0
+      0,
     );
-  }
+  },
 });
 
-export function setPatchToolHashModeGuideline(hashMode: boolean): void {
-  patchTool.promptGuidelines = buildPatchPromptGuidelines(hashMode);
+export function setPatchToolProfileGuideline(
+  profile: LocatorPatchProfile,
+): void {
+  patchTool.promptGuidelines = buildPatchPromptGuidelines(profile);
+  patchTool.parameters = buildPatchToolParameters(profile);
 }
 
-function buildPatchPromptGuidelines(hashMode: boolean): string[] {
+function buildPatchToolParameters(profile: LocatorPatchProfile) {
+  return Type.Object(
+    {
+      patch: Type.Optional(
+        Type.String({
+          description: PATCH_PARAMETER_DESCRIPTION,
+        }),
+      ),
+      patch_file: Type.Optional(
+        Type.String({
+          description:
+            "Path to a UTF-8 patch file. Mutually exclusive with `patch`. Relative paths resolve against cwd.",
+        }),
+      ),
+      dry_run: Type.Optional(
+        Type.Boolean({
+          description: "Validate/apply in memory and do not write.",
+        }),
+      ),
+      markerless_locator: Type.Optional(
+        Type.Union(
+          [
+            Type.Literal("exact"),
+            Type.Literal("unified-diff"),
+            Type.Literal("smart"),
+            Type.Literal("hash"),
+            Type.Literal("prefix"),
+            Type.Literal("contains"),
+          ],
+          {
+            description: buildMarkerlessLocatorDescription(profile),
+          },
+        ),
+      ),
+      receipt: Type.Optional(
+        Type.Union([Type.Literal("status"), Type.Literal("hash")], {
+          description:
+            "Patch result receipt. Overrides the configured profile default.",
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  );
+}
+
+function buildMarkerlessLocatorDescription(profile: LocatorPatchProfile): string {
+  const defaultLocator = PATCH_PROFILE_DEFAULTS[profile].markerlessLocator;
+  return `Markerless locator for context/delete rows without a locator marker. Current profile: ${profile}; default: ${defaultLocator}. Override for this call.`;
+}
+
+function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
   const guidelines = [];
-  if (hashMode) {
-    guidelines.push("Patch tool hash mode active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes prior `read` and prior patch receipts to avoid unnecessary read.");
+  if (profile === "hash") {
+    guidelines.push(
+      "Hash profile active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes from prior `read` and prior patch receipts to avoid unnecessary read.",
+    );
+  } else if (profile === "smart") {
+    guidelines.push(
+      "Patch tool smart profile active: markerless context/delete rows default to smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.",
+    );
   } else {
-    guidelines.push("Patch tool hash mode is off.");
+    guidelines.push(
+      "Patch tool classic profile active: markerless context/delete rows default to exact unified-diff behavior; hash locators and hash receipts require per-call opt-in.",
+    );
   }
+  guidelines.push(
+    "Patch uses configured `profile` (`classic`, `smart`, `hash`) plus per-call `markerless_locator` override for markerless context/delete rows. Explicit locator markers always override defaults.",
+  );
   return guidelines;
 }
 
-async function readPatchInput(patch: string | undefined, patchFile: string | undefined, cwd: string): Promise<string> {
+function resolvePatchExecutionOptions(
+  params: {
+    markerless_locator?: MarkerlessLocatorOption;
+    receipt?: PatchReceiptMode;
+  },
+  config: LocatorPatchConfig,
+): PatchExecutionOptions {
+  const profileDefaults = PATCH_PROFILE_DEFAULTS[config.profile];
+  const markerlessLocator = normalizeMarkerlessLocator(
+    params.markerless_locator ?? profileDefaults?.markerlessLocator ?? "exact",
+  );
+  const receipt = params.receipt ?? profileDefaults?.receipt ?? "status";
+  return {
+    parseOptions: {
+      markerlessLocator,
+      hashLocatorsEnabled:
+        config.profile === "hash" ||
+        receipt === "hash" ||
+        markerlessLocator === "hash",
+    },
+    receipt,
+  };
+}
+
+async function readPatchInput(
+  patch: string | undefined,
+  patchFile: string | undefined,
+  cwd: string,
+): Promise<string> {
   const hasInlinePatch = typeof patch === "string";
   const hasPatchFile = typeof patchFile === "string";
   if (hasInlinePatch === hasPatchFile) {
-    throw new InvalidPatchError("Provide exactly one of 'patch' or 'patch_file'.");
+    throw new InvalidPatchError(
+      "Provide exactly one of 'patch' or 'patch_file'.",
+    );
   }
   if (hasInlinePatch) {
     return patch;
@@ -435,21 +597,30 @@ async function readPatchInput(patch: string | undefined, patchFile: string | und
   return text;
 }
 
-async function parsePatchInputWithRetryPatch(patchText: string, hashMode: boolean) {
+async function parsePatchInputWithRetryPatch(
+  patchText: string,
+  parseOptions: ParsePatchOptions,
+) {
   try {
-    return parsePatchInput(patchText, undefined, { hashLocatorsEnabled: hashMode });
+    return parsePatchInput(patchText, undefined, parseOptions);
   } catch (error) {
     if (!(error instanceof InvalidPatchError)) {
       throw error;
     }
     const retryPatchPath = await writeRawRetryPatch(patchText);
-    const retryableError = new InvalidPatchError(`${error.detail}\nRetry patch: ${retryPatchPath}`, error.location);
+    const retryableError = new InvalidPatchError(
+      `${error.detail}\nRetry patch: ${retryPatchPath}`,
+      error.location,
+    );
     Object.assign(retryableError, { retryPatchPath });
     throw retryableError;
   }
 }
 
-async function applyOperationSequentially(cwd: string, operation: UniversalPatchOperation): Promise<PlannedFileChange> {
+async function applyOperationSequentially(
+  cwd: string,
+  operation: UniversalPatchOperation,
+): Promise<PlannedFileChange> {
   const operationTarget = await prepareOperationTarget(cwd, operation);
   return withFileMutationQueue(operationTarget.targetPath, async () => {
     const change = await planFileChange(operationTarget);
@@ -458,7 +629,10 @@ async function applyOperationSequentially(cwd: string, operation: UniversalPatch
   });
 }
 
-async function prepareOperationTargets(cwd: string, operations: readonly UniversalPatchOperation[]): Promise<OperationTarget[]> {
+async function prepareOperationTargets(
+  cwd: string,
+  operations: readonly UniversalPatchOperation[],
+): Promise<OperationTarget[]> {
   const operationTargets: OperationTarget[] = [];
   for (const operation of operations) {
     operationTargets.push(await prepareOperationTarget(cwd, operation));
@@ -467,14 +641,20 @@ async function prepareOperationTargets(cwd: string, operations: readonly Univers
   return operationTargets;
 }
 
-async function prepareOperationTarget(cwd: string, operation: UniversalPatchOperation): Promise<OperationTarget> {
-  const targetPath = operation.kind === "add"
-    ? await resolveNewTextFileTarget(cwd, operation.path)
-    : await resolveExistingRealPath(cwd, operation.path);
+async function prepareOperationTarget(
+  cwd: string,
+  operation: UniversalPatchOperation,
+): Promise<OperationTarget> {
+  const targetPath =
+    operation.kind === "add"
+      ? await resolveNewTextFileTarget(cwd, operation.path)
+      : await resolveExistingRealPath(cwd, operation.path);
   return { operation, targetPath };
 }
 
-async function planFileChanges(operationTargets: readonly OperationTarget[]): Promise<PlannedFileChange[]> {
+async function planFileChanges(
+  operationTargets: readonly OperationTarget[],
+): Promise<PlannedFileChange[]> {
   const plannedChanges: PlannedFileChange[] = [];
   for (const operationTarget of operationTargets) {
     plannedChanges.push(await planFileChange(operationTarget));
@@ -482,13 +662,19 @@ async function planFileChanges(operationTargets: readonly OperationTarget[]): Pr
   return plannedChanges;
 }
 
-async function planFileChangesForDryRun(cwd: string, operations: readonly UniversalPatchOperation[]): Promise<PlannedFileChange[]> {
+async function planFileChangesForDryRun(
+  cwd: string,
+  operations: readonly UniversalPatchOperation[],
+): Promise<PlannedFileChange[]> {
   const plannedChanges: PlannedFileChange[] = [];
   const virtualFiles = new Map<string, DryRunFileState>();
 
   for (const operation of operations) {
     const targetPath = await resolveDryRunTargetPath(cwd, operation);
-    const change = await planFileChangeForDryRun({ operation, targetPath }, virtualFiles);
+    const change = await planFileChangeForDryRun(
+      { operation, targetPath },
+      virtualFiles,
+    );
     plannedChanges.push(change);
     updateDryRunFileState(virtualFiles, change);
   }
@@ -496,9 +682,15 @@ async function planFileChangesForDryRun(cwd: string, operations: readonly Univer
   return plannedChanges;
 }
 
-async function resolveDryRunTargetPath(cwd: string, operation: UniversalPatchOperation): Promise<string> {
+async function resolveDryRunTargetPath(
+  cwd: string,
+  operation: UniversalPatchOperation,
+): Promise<string> {
   if (operation.kind !== "add") {
-    const existingPath = await resolveExistingRealPath(cwd, operation.path).catch(() => undefined);
+    const existingPath = await resolveExistingRealPath(
+      cwd,
+      operation.path,
+    ).catch(() => undefined);
     if (existingPath) {
       return existingPath;
     }
@@ -506,15 +698,25 @@ async function resolveDryRunTargetPath(cwd: string, operation: UniversalPatchOpe
   return resolvePathThroughExistingParent(cwd, operation.path);
 }
 
-async function resolvePathThroughExistingParent(cwd: string, inputPath: string): Promise<string> {
+async function resolvePathThroughExistingParent(
+  cwd: string,
+  inputPath: string,
+): Promise<string> {
   const absolutePath = resolveToolPath(cwd, inputPath);
-  const realParentDirectory = await realpath(dirname(absolutePath)).catch(() => {
-    throw new FileTextError(`Parent directory not found: ${dirname(absolutePath)}`);
-  });
+  const realParentDirectory = await realpath(dirname(absolutePath)).catch(
+    () => {
+      throw new FileTextError(
+        `Parent directory not found: ${dirname(absolutePath)}`,
+      );
+    },
+  );
   return resolve(realParentDirectory, basename(absolutePath));
 }
 
-async function planFileChangeForDryRun(operationTarget: OperationTarget, virtualFiles: Map<string, DryRunFileState>): Promise<PlannedFileChange> {
+async function planFileChangeForDryRun(
+  operationTarget: OperationTarget,
+  virtualFiles: Map<string, DryRunFileState>,
+): Promise<PlannedFileChange> {
   const { operation, targetPath } = operationTarget;
   const state = virtualFiles.get(targetPath);
 
@@ -525,20 +727,36 @@ async function planFileChangeForDryRun(operationTarget: OperationTarget, virtual
       operation: "add",
       patchPath: operation.path,
       targetPath,
-      newText
+      newText,
     };
   }
 
   const oldText = await readDryRunExistingText(targetPath, state);
   if (operation.kind === "delete") {
-    return { operation: "delete", patchPath: operation.path, targetPath, oldText, newText: undefined };
+    return {
+      operation: "delete",
+      patchPath: operation.path,
+      targetPath,
+      oldText,
+      newText: undefined,
+    };
   }
 
   const applyResult = applyPatchToText(oldText, operation.patch);
-  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult };
+  return {
+    operation: "update",
+    patchPath: operation.path,
+    targetPath,
+    oldText,
+    newText: applyResult.text,
+    applyResult,
+  };
 }
 
-async function assertDryRunNewTarget(targetPath: string, state: DryRunFileState | undefined): Promise<void> {
+async function assertDryRunNewTarget(
+  targetPath: string,
+  state: DryRunFileState | undefined,
+): Promise<void> {
   if (state?.exists) {
     throw new FileTextError(`Add File target already exists: ${targetPath}`);
   }
@@ -546,12 +764,20 @@ async function assertDryRunNewTarget(targetPath: string, state: DryRunFileState 
     await assertNewTextFileTarget(targetPath);
     return;
   }
-  await access(dirname(targetPath), constants.R_OK | constants.W_OK | constants.X_OK).catch(() => {
-    throw new FileTextError(`Directory is not readable and writable: ${dirname(targetPath)}`);
+  await access(
+    dirname(targetPath),
+    constants.R_OK | constants.W_OK | constants.X_OK,
+  ).catch(() => {
+    throw new FileTextError(
+      `Directory is not readable and writable: ${dirname(targetPath)}`,
+    );
   });
 }
 
-async function readDryRunExistingText(targetPath: string, state: DryRunFileState | undefined): Promise<string> {
+async function readDryRunExistingText(
+  targetPath: string,
+  state: DryRunFileState | undefined,
+): Promise<string> {
   if (state) {
     if (!state.exists) {
       throw new FileTextError(`File not found: ${targetPath}`);
@@ -562,28 +788,43 @@ async function readDryRunExistingText(targetPath: string, state: DryRunFileState
   return text;
 }
 
-function updateDryRunFileState(virtualFiles: Map<string, DryRunFileState>, change: PlannedFileChange): void {
+function updateDryRunFileState(
+  virtualFiles: Map<string, DryRunFileState>,
+  change: PlannedFileChange,
+): void {
   if (change.operation === "delete") {
     virtualFiles.set(change.targetPath, { exists: false });
     return;
   }
-  virtualFiles.set(change.targetPath, { exists: true, text: change.newText ?? "" });
+  virtualFiles.set(change.targetPath, {
+    exists: true,
+    text: change.newText ?? "",
+  });
 }
 
-async function writeRetryPatch(operations: readonly UniversalPatchOperation[]): Promise<string> {
+async function writeRetryPatch(
+  operations: readonly UniversalPatchOperation[],
+): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
-  await writeRawFile(retryPatchPath, serializeUniversalPatch(operations), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await writeRawFile(retryPatchPath, serializeUniversalPatch(operations), {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
   return retryPatchPath;
 }
 
 async function writeRawRetryPatch(patchText: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
-  await writeRawFile(retryPatchPath, patchText, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await writeRawFile(retryPatchPath, patchText, {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
   return retryPatchPath;
 }
-
 
 function renderSequentialFailureMessage(args: {
   appliedChanges: readonly PlannedFileChange[];
@@ -600,19 +841,28 @@ function renderSequentialFailureMessage(args: {
     `${renderOperationHeader(args.failedOperation)}\n${formatCause(args.cause)}`,
     "Skipped:",
     renderOperationList(args.skippedOperations),
-    `Retry patch: ${args.retryPatchPath}`
+    `Retry patch: ${args.retryPatchPath}`,
   ];
   return sections.join("\n");
 }
 
-function renderAppliedOperationList(changes: readonly PlannedFileChange[]): string {
+function renderAppliedOperationList(
+  changes: readonly PlannedFileChange[],
+): string {
   if (changes.length === 0) {
     return "(none)";
   }
-  return changes.map((change) => `*** ${capitalizeOperation(change.operation)} File: ${change.patchPath}`).join("\n");
+  return changes
+    .map(
+      (change) =>
+        `*** ${capitalizeOperation(change.operation)} File: ${change.patchPath}`,
+    )
+    .join("\n");
 }
 
-function renderOperationList(operations: readonly UniversalPatchOperation[]): string {
+function renderOperationList(
+  operations: readonly UniversalPatchOperation[],
+): string {
   if (operations.length === 0) {
     return "(none)";
   }
@@ -623,7 +873,9 @@ function renderOperationHeader(operation: UniversalPatchOperation): string {
   return `*** ${capitalizeOperation(operation.kind)} File: ${operation.path}`;
 }
 
-function capitalizeOperation(operation: UniversalPatchOperation["kind"]): "Add" | "Update" | "Delete" {
+function capitalizeOperation(
+  operation: UniversalPatchOperation["kind"],
+): "Add" | "Update" | "Delete" {
   if (operation === "add") return "Add";
   if (operation === "update") return "Update";
   return "Delete";
@@ -633,12 +885,12 @@ function formatCause(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-async function isHashModeEnabled(_ctx: { cwd: string }): Promise<boolean> {
-  return (await readLocatorPatchConfig()).hashMode;
-}
-
-function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryRun: boolean, hashMode: boolean) {
-  const status = buildPatchStatusDecision(plannedChanges, dryRun, hashMode);
+function buildPatchToolResult(
+  plannedChanges: readonly PlannedFileChange[],
+  dryRun: boolean,
+  receipt: PatchReceiptMode,
+) {
+  const status = buildPatchStatusDecision(plannedChanges, dryRun, receipt);
   return {
     content: [{ type: "text" as const, text: status.text }],
     details: {
@@ -648,21 +900,28 @@ function buildPatchToolResult(plannedChanges: readonly PlannedFileChange[], dryR
         path: change.targetPath,
         patchPath: change.patchPath,
         operation: change.operation,
-        lineCount: change.operation === "delete" ? 0 : parseText(change.newText ?? "").lines.length,
-        audit: change.applyResult ? { hunkAudits: change.applyResult.hunkAudits } : undefined
+        lineCount:
+          change.operation === "delete"
+            ? 0
+            : parseText(change.newText ?? "").lines.length,
+        audit: change.applyResult
+          ? { hunkAudits: change.applyResult.hunkAudits }
+          : undefined,
       })),
       status: {
         omitted: status.omitted,
         omitReason: status.omitReason,
         overflow: status.overflow,
-        visibleLineCount: status.visibleLineCount
+        visibleLineCount: status.visibleLineCount,
       },
-      charEfficiency: getPatchCharEfficiency(plannedChanges)
-    }
+      charEfficiency: getPatchCharEfficiency(plannedChanges),
+    },
   };
 }
 
-async function planFileChange(operationTarget: OperationTarget): Promise<PlannedFileChange> {
+async function planFileChange(
+  operationTarget: OperationTarget,
+): Promise<PlannedFileChange> {
   const { operation, targetPath } = operationTarget;
   if (operation.kind === "add") {
     const newText = serializeAddFileText(operation);
@@ -671,19 +930,34 @@ async function planFileChange(operationTarget: OperationTarget): Promise<Planned
       operation: "add",
       patchPath: operation.path,
       targetPath,
-      newText
+      newText,
     };
   }
 
   await assertExistingTextFileMutationTarget(targetPath);
-  const { text: oldText } = await readExistingTextFile(targetPath, { writable: true });
+  const { text: oldText } = await readExistingTextFile(targetPath, {
+    writable: true,
+  });
 
   if (operation.kind === "delete") {
-    return { operation: "delete", patchPath: operation.path, targetPath, oldText, newText: undefined };
+    return {
+      operation: "delete",
+      patchPath: operation.path,
+      targetPath,
+      oldText,
+      newText: undefined,
+    };
   }
 
   const applyResult = applyPatchToText(oldText, operation.patch);
-  return { operation: "update", patchPath: operation.path, targetPath, oldText, newText: applyResult.text, applyResult };
+  return {
+    operation: "update",
+    patchPath: operation.path,
+    targetPath,
+    oldText,
+    newText: applyResult.text,
+    applyResult,
+  };
 }
 
 async function writePlannedChange(change: PlannedFileChange): Promise<void> {
@@ -696,12 +970,16 @@ async function writePlannedChange(change: PlannedFileChange): Promise<void> {
   }
 }
 
-function rejectDuplicateResolvedTargets(operationTargets: readonly OperationTarget[]): void {
+function rejectDuplicateResolvedTargets(
+  operationTargets: readonly OperationTarget[],
+): void {
   const seen = new Map<string, UniversalPatchOperation>();
   for (const { operation, targetPath } of operationTargets) {
     const existing = seen.get(targetPath);
     if (existing) {
-      throw new InvalidPatchError(`Multiple operations resolve to the same target: ${existing.path} and ${operation.path}`);
+      throw new InvalidPatchError(
+        `Multiple operations resolve to the same target: ${existing.path} and ${operation.path}`,
+      );
     }
     seen.set(targetPath, operation);
   }
@@ -712,49 +990,65 @@ function serializeAddFileText(operation: AddFileOperation): string {
     bom: false,
     finalNewline: operation.finalNewline,
     lines: operation.lines,
-    newline: "\n"
+    newline: "\n",
   });
 }
 
-function getPatchCharEfficiency(plannedChanges: readonly PlannedFileChange[]): PatchCharEfficiency {
+function getPatchCharEfficiency(
+  plannedChanges: readonly PlannedFileChange[],
+): PatchCharEfficiency {
   return plannedChanges.reduce(
     (total, change) => {
       const changeEfficiency = getFileChangeCharEfficiency(change);
       return {
         patchChars: total.patchChars + changeEfficiency.patchChars,
-        baselineChars: total.baselineChars + changeEfficiency.baselineChars
+        baselineChars: total.baselineChars + changeEfficiency.baselineChars,
       };
     },
-    { patchChars: 0, baselineChars: 0 }
+    { patchChars: 0, baselineChars: 0 },
   );
 }
 
-function getFileChangeCharEfficiency(change: PlannedFileChange): PatchCharEfficiency {
+function getFileChangeCharEfficiency(
+  change: PlannedFileChange,
+): PatchCharEfficiency {
   if (change.operation === "add") {
     const chars = prefixedTextLinesCharCount(change.newText ?? "");
     return { patchChars: chars, baselineChars: chars };
   }
   if (change.operation === "delete") {
-    return { patchChars: 0, baselineChars: prefixedTextLinesCharCount(change.oldText ?? "") };
+    return {
+      patchChars: 0,
+      baselineChars: prefixedTextLinesCharCount(change.oldText ?? ""),
+    };
   }
 
   const hunkAudits = change.applyResult?.hunkAudits ?? [];
   return hunkAudits.reduce(
     (total, hunkAudit) => ({
       patchChars: total.patchChars + hunkAudit.patchCharCount,
-      baselineChars: total.baselineChars + hunkAudit.baselineCharCount
+      baselineChars: total.baselineChars + hunkAudit.baselineCharCount,
     }),
-    { patchChars: 0, baselineChars: 0 }
+    { patchChars: 0, baselineChars: 0 },
   );
 }
 
 function prefixedTextLinesCharCount(text: string): number {
-  return parseText(text).lines.reduce((total, line) => total + line.length + 1, 0);
+  return parseText(text).lines.reduce(
+    (total, line) => total + line.length + 1,
+    0,
+  );
 }
 
-
-function buildPatchStatusDecision(plannedChanges: readonly PlannedFileChange[], dryRun: boolean, hashMode: boolean): PatchStatusDecision {
-  const visibleText = hashMode ? renderPatchHashReceiptDiffs(plannedChanges.map(toDiffInput)) : renderUniversalPatchStatus(plannedChanges, dryRun);
+function buildPatchStatusDecision(
+  plannedChanges: readonly PlannedFileChange[],
+  dryRun: boolean,
+  receipt: PatchReceiptMode,
+): PatchStatusDecision {
+  const visibleText =
+    receipt === "hash"
+      ? renderPatchHashReceiptDiffs(plannedChanges.map(toDiffInput))
+      : renderUniversalPatchStatus(plannedChanges, dryRun);
   const visibleLineCount = countRenderedLines(visibleText);
   const overflow = getVisibleOutputOverflow(visibleText, visibleLineCount);
   if (overflow) {
@@ -764,25 +1058,36 @@ function buildPatchStatusDecision(plannedChanges: readonly PlannedFileChange[], 
       omitted: true,
       omitReason: "too_large",
       overflow,
-      visibleLineCount: countRenderedLines(text)
+      visibleLineCount: countRenderedLines(text),
     };
   }
 
   return {
     text: visibleText,
     omitted: false,
-    visibleLineCount
+    visibleLineCount,
   };
 }
 
-
-function renderUniversalPatchStatus(plannedChanges: readonly PlannedFileChange[], dryRun: boolean): string {
-  return plannedChanges.map((change) => renderFileStatus(change, dryRun)).join("\n");
+function renderUniversalPatchStatus(
+  plannedChanges: readonly PlannedFileChange[],
+  dryRun: boolean,
+): string {
+  return plannedChanges
+    .map((change) => renderFileStatus(change, dryRun))
+    .join("\n");
 }
 
 function renderFileStatus(change: PlannedFileChange, dryRun: boolean): string {
-  const status = dryRun ? "Validated" : change.operation === "delete" ? "Deleted file" : "Applied";
-  return [`*** ${capitalizeOperation(change.operation)} File: ${change.patchPath}`, status].join("\n");
+  const status = dryRun
+    ? "Validated"
+    : change.operation === "delete"
+      ? "Deleted file"
+      : "Applied";
+  return [
+    `*** ${capitalizeOperation(change.operation)} File: ${change.patchPath}`,
+    status,
+  ].join("\n");
 }
 
 function toDiffInput(change: PlannedFileChange): PatchTranscriptDiffInput {
@@ -791,14 +1096,19 @@ function toDiffInput(change: PlannedFileChange): PatchTranscriptDiffInput {
     path: change.patchPath,
     oldText: change.oldText,
     newText: change.newText,
-    applyResult: change.applyResult
+    applyResult: change.applyResult,
   };
 }
 
-function withMutationQueues<T>(paths: readonly string[], callback: () => Promise<T>): Promise<T> {
+function withMutationQueues<T>(
+  paths: readonly string[],
+  callback: () => Promise<T>,
+): Promise<T> {
   const [firstPath, ...remainingPaths] = paths;
   if (!firstPath) {
     return callback();
   }
-  return withFileMutationQueue(firstPath, () => withMutationQueues(remainingPaths, callback));
+  return withFileMutationQueue(firstPath, () =>
+    withMutationQueues(remainingPaths, callback),
+  );
 }

@@ -74,4 +74,4 @@ function createLocatorReadTool(toolName: LocatorReadToolName) {
 }
 
 export const readHashTool = createLocatorReadTool("read_hash");
-export const hashModeReadTool = createLocatorReadTool("read");
+export const hashProfileReadTool = createLocatorReadTool("read");

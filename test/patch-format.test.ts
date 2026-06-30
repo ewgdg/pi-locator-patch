@@ -210,6 +210,38 @@ describe("patch parser", () => {
     expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
   });
 
+  it("parses markerless rows with the configured smart markerless locator", () => {
+    const parsed = parsePatch(["@@", "target text", "-old text", "+new"].join("\n"), undefined, 0, { markerlessLocator: "smart" });
+
+    expect(parsed.hunks[0].ops).toMatchObject([
+      { kind: "context", content: "target text", textSelector: "exact", smart: true },
+      { kind: "delete", content: "old text", textSelector: "exact", smart: true },
+      { kind: "insert", content: "new" }
+    ]);
+  });
+
+  it("parses markerless rows with prefix, contains, and hash markerless locators", () => {
+    const hash = hashLine("old").slice(0, 4);
+
+    expect(parsePatch("@@\nanchor\n-old", undefined, 0, { markerlessLocator: "prefix" }).hunks[0].ops).toMatchObject([
+      { kind: "context", content: "anchor", textSelector: "prefix" },
+      { kind: "delete", content: "old", textSelector: "prefix" }
+    ]);
+    expect(parsePatch("@@\nneedle\n-old", undefined, 0, { markerlessLocator: "contains" }).hunks[0].ops).toMatchObject([
+      { kind: "context", content: "needle", textSelector: "contains" },
+      { kind: "delete", content: "old", textSelector: "contains" }
+    ]);
+    expect(parsePatch(`@@\n${hash}\n-${hash}`, undefined, 0, { markerlessLocator: "hash" }).hunks[0].ops).toMatchObject([
+      { kind: "context", hash },
+      { kind: "delete", hash }
+    ]);
+  });
+
+  it("keeps exact default behavior and rejects malformed markerless hashes", () => {
+    expect(() => parsePatch("@@\ncontext", undefined, 0, { markerlessLocator: "exact" })).toThrow("[E_INVALID_PATCH]");
+    expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { markerlessLocator: "hash" })).toThrow("Malformed context hash locator");
+  });
+
   it("rejects line-number hunk headers", () => {
     expect(() => parsePatch(`@@ -1,1 +1,1 @@\n${row(" ", "ctx")}`)).toThrow("[E_INVALID_PATCH]");
   });

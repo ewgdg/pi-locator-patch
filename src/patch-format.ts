@@ -57,13 +57,22 @@ export interface Patch {
   hunks: Hunk[];
 }
 
+export type MarkerlessLocatorKind = "exact" | "smart" | "hash" | "prefix" | "contains";
+export type MarkerlessLocatorOption = MarkerlessLocatorKind | "unified-diff";
+
 export interface ParsePatchOptions {
   hashLocatorsEnabled?: boolean;
+  markerlessLocator?: MarkerlessLocatorOption;
+}
+
+interface NormalizedParsePatchOptions {
+  hashLocatorsEnabled: boolean;
+  markerlessLocator: MarkerlessLocatorKind;
 }
 
 export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, lineOffset = 0, options: ParsePatchOptions = {}): Patch {
   const lines = splitPatchLines(patchText);
-  const hashLocatorsEnabled = options.hashLocatorsEnabled ?? true;
+  const normalizedOptions = normalizeParsePatchOptions(options);
   let index = 0;
   const hunks: Hunk[] = [];
 
@@ -98,7 +107,7 @@ export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, l
       index += 1;
     }
 
-    const ops = parseHunkOperationLines(opLines, hashFn, hashLocatorsEnabled);
+    const ops = parseHunkOperationLines(opLines, hashFn, normalizedOptions);
     if (ops.length === 0) {
       throw new InvalidPatchError("Hunk must contain at least one operation.", { inputLine: hunkHeaderLine });
     }
@@ -118,16 +127,53 @@ interface PatchOperationLine {
   inputLine: number;
 }
 
-function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction, hashLocatorsEnabled: boolean): PatchOp[] {
-  return opLines.map((opLine) => {
-    if (hasMissingLocatorMarker(opLine.line, hashLocatorsEnabled)) {
-      return parseUnifiedDiffOp(opLine.line, hashFn, opLine.inputLine);
+function normalizeParsePatchOptions(options: ParsePatchOptions): NormalizedParsePatchOptions {
+  return {
+    hashLocatorsEnabled: options.hashLocatorsEnabled ?? true,
+    markerlessLocator: normalizeMarkerlessLocator(options.markerlessLocator ?? "exact")
+  };
+}
+
+export function normalizeMarkerlessLocator(locator: MarkerlessLocatorOption): MarkerlessLocatorKind {
+  if (locator === "unified-diff") return "exact";
+  if (locator === "exact" || locator === "smart" || locator === "hash" || locator === "prefix" || locator === "contains") {
+    return locator;
+  }
+  throw new InvalidPatchError(`Unsupported markerless locator: ${String(locator)}.`);
+}
+
+function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction, options: NormalizedParsePatchOptions): PatchOp[] {
+  return opLines.map((opLine) => parseHunkOperationLine(opLine.line, hashFn, opLine.inputLine, options));
+}
+
+function parseHunkOperationLine(line: string, hashFn: HashFunction, inputLine: number, options: NormalizedParsePatchOptions): PatchOp {
+  if (line === "") {
+    return parseUnifiedDiffOp(line, hashFn, inputLine);
+  }
+  if (line.startsWith("+")) {
+    return parsePatchOp(line, hashFn, inputLine);
+  }
+  if (line.startsWith(" ") || line.startsWith("-")) {
+    const kind: MatchPatchOpKind = line.startsWith("-") ? "delete" : "context";
+    const selector = line.slice(1);
+    if (kind === "context" && selector === "") {
+      return parseSelectorPatchOp(kind, selector, line, inputLine);
     }
-    if (hasOmittedContextOperator(opLine.line, hashLocatorsEnabled)) {
-      return parseSelectorPatchOp("context", opLine.line, opLine.line, opLine.inputLine);
+    if (hasLocatorMarker(selector, options.hashLocatorsEnabled)) {
+      return parseSelectorPatchOp(kind, selector, line, inputLine);
     }
-    return parsePatchOp(opLine.line, hashFn, opLine.inputLine);
-  });
+    if (options.markerlessLocator === "exact") {
+      return parseUnifiedDiffOp(line, hashFn, inputLine);
+    }
+    return parseMarkerlessLocatorPatchOp(kind, selector, line, inputLine, options.markerlessLocator);
+  }
+  if (hasLocatorMarker(line, options.hashLocatorsEnabled)) {
+    return parseSelectorPatchOp("context", line, line, inputLine);
+  }
+  if (options.markerlessLocator !== "exact") {
+    return parseMarkerlessLocatorPatchOp("context", line, line, inputLine, options.markerlessLocator);
+  }
+  return parsePatchOp(line, hashFn, inputLine);
 }
 
 const HUNK_HEADER_PATTERN = /^@@(?: @([1-9]\d*)(?:\.\.\.([1-9]\d*))?)?$/;
@@ -158,20 +204,6 @@ function parseHunkHeader(line: string, inputLine: number): HunkAnchorHint | unde
     throw new InvalidPatchError("Malformed hunk anchor hint. Start line must be less than or equal to end line.", { inputLine });
   }
   return endLine === undefined ? { line: hintLine } : { line: hintLine, endLine };
-}
-
-function hasMissingLocatorMarker(line: string, hashLocatorsEnabled: boolean): boolean {
-  if (line === "") return true;
-  if (line.startsWith("+")) return false;
-  if (!(line.startsWith(" ") || line.startsWith("-"))) return false;
-
-  const selector = line.slice(1);
-  if (selector === "") return line.startsWith("-");
-  return !hasLocatorMarker(selector, hashLocatorsEnabled);
-}
-
-function hasOmittedContextOperator(line: string, hashLocatorsEnabled: boolean): boolean {
-  return hasLocatorMarker(line, hashLocatorsEnabled);
 }
 
 function hasLocatorMarker(selector: string, hashLocatorsEnabled: boolean): boolean {
@@ -241,6 +273,14 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
   }
 
   throwRawTextSelectorError(kind, selector, line, inputLine);
+}
+
+function parseMarkerlessLocatorPatchOp(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number, markerlessLocator: MarkerlessLocatorKind): PatchOp {
+  if (markerlessLocator === "smart") return parseSmartPatchOp(kind, selector, line, inputLine);
+  if (markerlessLocator === "hash") return parseHashPatchOp(kind, selector, line, inputLine);
+  if (markerlessLocator === "prefix") return parsePrefixPatchOp(kind, selector, line, inputLine);
+  if (markerlessLocator === "contains") return parseContainsPatchOp(kind, selector, line, inputLine);
+  return { kind, content: selector, textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
 }
 
 

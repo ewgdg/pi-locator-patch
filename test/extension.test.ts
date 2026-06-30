@@ -4,18 +4,28 @@ import { patchTool } from "../src/tools/locator-patch.js";
 
 describe("extension registration", () => {
   it("keeps built-in read by default while hiding read_hash/write/edit", async () => {
-    const previous = process.env.PI_LOCATOR_PATCH_HASH_MODE;
-    process.env.PI_LOCATOR_PATCH_HASH_MODE = "0";
+    const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
+    delete process.env.PI_LOCATOR_PATCH_PROFILE;
     try {
       const registeredTools: string[] = [];
-      let sessionStart: ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined;
-      let activeTools = ["read", "edit", "write", "locator_read", "locator_patch"];
+      let sessionStart:
+        ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined;
+      let activeTools = [
+        "read",
+        "edit",
+        "write",
+        "locator_read",
+        "locator_patch",
+      ];
 
       piLocatorPatch({
         registerTool(tool: { name: string }) {
           registeredTools.push(tool.name);
         },
-        on(event: string, handler: (event: unknown, ctx: unknown) => Promise<void> | void) {
+        on(
+          event: string,
+          handler: (event: unknown, ctx: unknown) => Promise<void> | void,
+        ) {
           if (event === "session_start") {
             sessionStart = handler;
           }
@@ -25,40 +35,51 @@ describe("extension registration", () => {
         },
         setActiveTools(nextTools: string[]) {
           activeTools = nextTools;
-        }
+        },
       } as never);
 
       expect(registeredTools).toEqual(["patch"]);
 
-      await sessionStart?.({}, { cwd: process.cwd(), isProjectTrusted: () => false });
+      await sessionStart?.(
+        {},
+        { cwd: process.cwd(), isProjectTrusted: () => false },
+      );
 
       expect(activeTools).toContain("read");
       expect(activeTools).not.toContain("read_hash");
       expect(activeTools).toContain("patch");
-      expect(patchTool.promptGuidelines?.join("\n")).not.toContain("Hash mode");
+      expect(patchTool.promptGuidelines?.join("\n")).toContain(
+        "classic profile active",
+      );
+      expect(markerlessLocatorDescription()).toContain(
+        "Current profile: classic; default: exact",
+      );
       expect(activeTools).not.toContain("write");
       expect(activeTools).not.toContain("edit");
       expect(activeTools).not.toContain("locator_read");
       expect(activeTools).not.toContain("locator_patch");
     } finally {
-      if (previous === undefined) delete process.env.PI_LOCATOR_PATCH_HASH_MODE;
-      else process.env.PI_LOCATOR_PATCH_HASH_MODE = previous;
+      restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
     }
   });
 
-  it("registers the hash reader as read when hash mode is enabled", async () => {
-    const previous = process.env.PI_LOCATOR_PATCH_HASH_MODE;
-    process.env.PI_LOCATOR_PATCH_HASH_MODE = "1";
+  it("uses smart profile defaults without replacing read", async () => {
+    const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
+    process.env.PI_LOCATOR_PATCH_PROFILE = "smart";
     try {
       const registeredTools: string[] = [];
-      let sessionStart: ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined;
+      let sessionStart:
+        ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined;
       let activeTools = ["read", "read_hash", "edit", "write"];
 
       piLocatorPatch({
         registerTool(tool: { name: string }) {
           registeredTools.push(tool.name);
         },
-        on(event: string, handler: (event: unknown, ctx: unknown) => Promise<void> | void) {
+        on(
+          event: string,
+          handler: (event: unknown, ctx: unknown) => Promise<void> | void,
+        ) {
           if (event === "session_start") sessionStart = handler;
         },
         getActiveTools() {
@@ -66,19 +87,85 @@ describe("extension registration", () => {
         },
         setActiveTools(nextTools: string[]) {
           activeTools = nextTools;
-        }
+        },
       } as never);
 
-      await sessionStart?.({}, { cwd: process.cwd(), isProjectTrusted: () => false });
+      await sessionStart?.(
+        {},
+        { cwd: process.cwd(), isProjectTrusted: () => false },
+      );
+
+      expect(registeredTools).not.toContain("read");
+      expect(activeTools).toContain("read");
+      expect(activeTools).not.toContain("read_hash");
+      expect(activeTools).toContain("patch");
+      expect(patchTool.promptGuidelines?.join("\n")).toContain(
+        "smart profile active",
+      );
+      expect(markerlessLocatorDescription()).toContain(
+        "Current profile: smart; default: smart",
+      );
+    } finally {
+      restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
+    }
+  });
+
+  it("registers the hash reader as read when hash profile is enabled", async () => {
+    const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
+    process.env.PI_LOCATOR_PATCH_PROFILE = "hash";
+    try {
+      const registeredTools: string[] = [];
+      let sessionStart:
+        ((event: unknown, ctx: unknown) => Promise<void> | void) | undefined;
+      let activeTools = ["read", "read_hash", "edit", "write"];
+
+      piLocatorPatch({
+        registerTool(tool: { name: string }) {
+          registeredTools.push(tool.name);
+        },
+        on(
+          event: string,
+          handler: (event: unknown, ctx: unknown) => Promise<void> | void,
+        ) {
+          if (event === "session_start") sessionStart = handler;
+        },
+        getActiveTools() {
+          return activeTools;
+        },
+        setActiveTools(nextTools: string[]) {
+          activeTools = nextTools;
+        },
+      } as never);
+
+      await sessionStart?.(
+        {},
+        { cwd: process.cwd(), isProjectTrusted: () => false },
+      );
 
       expect(registeredTools).toContain("read");
       expect(activeTools).toContain("read");
       expect(activeTools).not.toContain("read_hash");
       expect(activeTools).toContain("patch");
-      expect(patchTool.promptGuidelines?.join("\n")).toContain("Hash mode active");
+      expect(patchTool.promptGuidelines?.join("\n")).toContain(
+        "Hash profile active",
+      );
+      expect(markerlessLocatorDescription()).toContain(
+        "Current profile: hash; default: hash",
+      );
     } finally {
-      if (previous === undefined) delete process.env.PI_LOCATOR_PATCH_HASH_MODE;
-      else process.env.PI_LOCATOR_PATCH_HASH_MODE = previous;
+      restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
     }
   });
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+function markerlessLocatorDescription(): string {
+  const parameters = patchTool.parameters as {
+    properties: { markerless_locator: { description?: string } };
+  };
+  return parameters.properties.markerless_locator.description ?? "";
+}

@@ -2,7 +2,7 @@
 
 ## Optional hash locators
 
-Use `read` in hash mode to render logical text lines as:
+Use `read` under `profile: "hash"` to render logical text lines as:
 
 ```text
 HASH│content
@@ -11,7 +11,7 @@ HASH│content
 
 Short or low-entropy lines still include the `│` marker but no visible hash: `trim().length < 8` or entropy `< 10` shows no hash, entropy `< 20` shows 3 chars, otherwise 4. `HASH` is the first 3 or 4 characters of the SHA-256 based full line hash. Line terminators are excluded. Duplicate content produces same full hash and same visible prefix.
 
-Hash mode is opt-in. Set `hashMode: true` in `~/.pi/agent/extensions/pi-locator-patch/config.json`, or use `PI_LOCATOR_PATCH_HASH_MODE=1` / `0` to force it for quick testing. In hash mode, built-in `read` is replaced by the hash-line `read`, and patch success output uses the hash receipt described below. Outside hash mode, `read_hash` is hidden, built-in `read` stays active, and `#` is not parsed as a patch locator marker.
+Profiles control session defaults and read registration. Set `profile: "classic" | "smart" | "hash"` in `~/.pi/agent/extensions/pi-locator-patch/config.json`, or use `PI_LOCATOR_PATCH_PROFILE`. `classic` keeps built-in `read` and exact/status patch defaults; `smart` keeps built-in `read` and smart/status patch defaults; `hash` replaces built-in `read` with hash-line `read` and uses hash/hash patch defaults.
 
 Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline convention (`LF`, `CRLF`, or `CR`) and final-newline state are preserved on update write. Empty file has zero logical lines.
 
@@ -50,13 +50,21 @@ Supported section headers:
 
 Patch must start with `*** Begin Patch` and end with `*** End Patch`. Multiple operations may target the same path. File operations apply sequentially: earlier successful operations stay applied if a later non-dry operation fails, and later operations are skipped. During non-dry apply failures, the tool writes a retry patch containing the failed operation plus skipped later operations and includes its path in the error message. Parser failures write the raw malformed input as the retry patch so agents can fix it via `patch_file` without re-emitting the full patch. `dry_run: true` validates the full patch without writing.
 
+Patch calls can set `markerless_locator` and `receipt`. `profile` is configuration, not a patch parameter.
+
+- configured `profile: "classic"` — markerless context/delete rows use exact unified-diff behavior; status receipt.
+- configured `profile: "smart"` — markerless context/delete rows use smart locators; status receipt.
+- configured `profile: "hash"` — markerless context/delete rows use hash locators; hash receipt.
+
+`markerless_locator` can be `exact`, `unified-diff`, `smart`, `hash`, `prefix`, or `contains`; default is profile-based (`classic=exact`, `smart=smart`, `hash=hash`) and can be overridden for one call. `receipt` can be `status` or `hash` and overrides the configured profile receipt default for one call. Parsed markerless rows serialize back as explicit locators in retry patches, so retry files do not depend on the original config.
+
 ## Add File
 
 - Target must not exist.
 - Each body row starts with `+`; text after `+` is literal file content.
 - Do not include hashes in `+` lines unless those hash characters are intended file content.
 - New file content is written as rows joined with `\n`; no implicit final newline is added.
-- In hash mode, visible receipt exposes the Add File header, `@@ add file @@`, and inserted content rows. Without hash mode, visible status is the Add File header plus `Applied`.
+- With hash receipt, visible output exposes the Add File header, `@@ add file @@`, and inserted content rows. With status receipt, visible status is the Add File header plus `Applied`.
 
 ## Update File
 
@@ -85,10 +93,10 @@ Rules:
 
 - Hunk header must be `@@`, `@@ @<line>`, or `@@ @<start>...<end>`. `@@ @<line>` starts searching at 1-based line `<line>` and requires the resolved match start to be at or after that line. `@@ @<start>...<end>` requires the resolved match span to stay within inclusive 1-based lines `<start>...<end>`.
 - No source/destination diff ranges, duplicate counters, perfect hashes, or fuzzy anchors.
-- Context/delete rows use `<operator><locator>` syntax: `<operator>` is a space for context or `-` for delete; `<locator>` is `:`, `^`, `*`, `?`, `$`, `~`, hash-mode-only `#`, or `...` plus selector-specific text, hash, or JSON. Forms: ` :<text>` / `-:<text>` = exact context/delete text, ` ^<prefix>` / `-^<prefix>` = prefix context/delete text, ` *<needle>` / `-*<needle>` = contains context/delete text, ` ?{...}` / `-?{...}` = combined context/delete text, ` $<suffix>` / `-$<suffix>` = suffix context/delete text, ` ~<text>` / `-~<text>` = opt-in smart context/delete text, hash mode ` #<hash>` / `-#<hash>` = hash context/delete (3 or 4 base64url characters), ` ...` = skipped context range, `-...` = delete range. Insert rows use `+<content>` and have no selector; `+~literal` inserts `~literal`.
-  Context locator rows may start with a literal space, or omit it. For example, `^prefix` is equivalent to ` ^prefix`, `~target text` is equivalent to ` ~target text`, and `...` is equivalent to ` ...`. Use ` :` or `:` for exact text, including indented lines and literal leading `#` text. A context/delete row without a locator marker is parsed as unified diff: text after ` ` or `-` is exact line content; in default mode `#` is not a locator marker, so ` #define X` and `-#old` are unified-diff exact text rows. Bare unified-diff context text without leading space, including bare `#abc`, is invalid. A blank hunk row means an empty context line.
+- Context/delete rows use `<operator><locator>` syntax: `<operator>` is a space for context or `-` for delete; `<locator>` is `:`, `^`, `*`, `?`, `$`, `~`, hash-enabled `#`, or `...` plus selector-specific text, hash, or JSON. Forms: ` :<text>` / `-:<text>` = exact context/delete text, ` ^<prefix>` / `-^<prefix>` = prefix context/delete text, ` *<needle>` / `-*<needle>` = contains context/delete text, ` ?{...}` / `-?{...}` = combined context/delete text, ` $<suffix>` / `-$<suffix>` = suffix context/delete text, ` ~<text>` / `-~<text>` = opt-in smart context/delete text, hash-enabled ` #<hash>` / `-#<hash>` = hash context/delete (3 or 4 base64url characters), ` ...` = skipped context range, `-...` = delete range. Insert rows use `+<content>` and have no selector; `+~literal` inserts `~literal`.
+  Context locator rows may start with a literal space, or omit it. For example, `^prefix` is equivalent to ` ^prefix`, `~target text` is equivalent to ` ~target text`, and `...` is equivalent to ` ...`. Use ` :` or `:` for exact text, including indented lines and literal leading `#` text. A context/delete row without a locator marker uses the patch call's `markerless_locator`. Default `exact` preserves unified-diff behavior: text after ` ` or `-` is exact line content, and bare exact context text without leading space is invalid. Non-exact defaults also allow bare markerless context rows, e.g. `target text` under configured `profile: "smart"`. A blank hunk row always means an empty exact context line.
 - Combined selector JSON (` ?{...}` / `-?{...}`) must be an object with only `prefix`, `contains`, and `suffix`; at least one key is required. `prefix`/`suffix` must be non-empty strings. `contains` may be a non-empty string or non-empty array of non-empty strings. All supplied predicates must match the same line.
-- Smart locators (` ~<text>` / `-~<text>`, or omitted-space context `~<text>`) are opt-in and reject empty text. For each candidate hunk span, each smart row independently resolves to its strongest line-level match: exact, prefix/suffix, contains, then whitespace token-subsequence. Fixed explicit locators in the same hunk keep their normal predicate. Prefix/suffix have the same rank, but audit records the actual resolved kind. The whole hunk applies only when dominance leaves one non-dominated candidate; tradeoffs or equal score vectors are ambiguous, and zero candidates are stale. Broad prefix/suffix/contains matches require useful nonblank alphanumeric text, and token-subsequence also requires at least two query tokens in order with gaps allowed.
+- Smart locators (` ~<text>` / `-~<text>`, omitted-space context `~<text>`, or markerless rows when `markerless_locator` is `smart`) reject empty text. For each candidate hunk span, each smart row independently resolves to its strongest line-level match: exact, prefix/suffix, contains, then whitespace token-subsequence. Fixed explicit locators in the same hunk keep their normal predicate. Prefix/suffix have the same rank, but audit records the actual resolved kind. The whole hunk applies only when dominance leaves one non-dominated candidate; tradeoffs or equal score vectors are ambiguous, and zero candidates are stale. Broad prefix/suffix/contains matches require useful nonblank alphanumeric text, and token-subsequence also requires at least two query tokens in order with gaps allowed.
 - Do not use hash-line read output rows (`HASH│content`) as patch operations. Insert operations contain literal content directly after `+` (`+new text`). Do not include hashes in `+` lines unless those hash characters are intended file content.
 - ` ...` preserves every target line between the nearest surrounding context/delete operations while avoiding long context in the patch.
 - `-...` deletes every target line between the nearest surrounding context/delete operations. Add `+` lines after it to replace that range. Surrounding delete operations also anchor the sparse range, then delete their matched endpoint lines.
@@ -144,7 +152,7 @@ Delete is a hard delete of the resolved regular file after validation. Validatio
 
 ## Success receipt
 
-With hash mode enabled, `patch` success output is a compact hash-only receipt, not a full patched file:
+With `profile: "hash"` or `receipt: "hash"`, `patch` success output is a compact hash-only receipt, not a full patched file:
 
 ```text
 *** Add File: new.txt
@@ -158,7 +166,7 @@ With hash mode enabled, `patch` success output is a compact hash-only receipt, n
 Deleted file
 ```
 
-Update receipts show hunk headers, surviving context line hashes, and inserted-line hashes. Deleted rows are omitted. Delete receipts show only the operation header and `Deleted file`. If the receipt exceeds visible output limits, the tool falls back to compact status rows with `Applied`, `Validated`, or `Deleted file`. Without hash mode, success output is compact status rows only.
+Update receipts show hunk headers, surviving context line hashes, and inserted-line hashes. Deleted rows are omitted. Delete receipts show only the operation header and `Deleted file`. If the receipt exceeds visible output limits, the tool falls back to compact status rows with `Applied`, `Validated`, or `Deleted file`. With `receipt: "status"`, success output is compact status rows only.
 
 ## `details.diff`
 
@@ -167,4 +175,4 @@ When patch execution fails, parser errors include an input line number. Pi TUI r
 
 ## Collision risk
 
-Visible hash locators expose 18 bits at 3 characters or 24 bits at 4 characters. Collisions are accepted behavior. Hash-only locators match by hash prefix only and are parsed only in hash mode; malformed hash locators fail instead of falling back to unified-diff. Use text-only locators when exact content is needed. Use hash-line `read` in hash mode, or prior hash-mode patch receipts, to retrieve current target hashes after apply.
+Visible hash locators expose 18 bits at 3 characters or 24 bits at 4 characters. Collisions are accepted behavior. Hash-only locators match by hash prefix only and are parsed only when hash locators are enabled by `receipt: "hash"`, `profile: "hash"`, or `markerless_locator: "hash"`; malformed hash locators fail instead of falling back to unified-diff. Use text-only locators when exact content is needed. Use hash-line `read` under `profile: "hash"`, or prior hash receipts, to retrieve current target hashes after apply.

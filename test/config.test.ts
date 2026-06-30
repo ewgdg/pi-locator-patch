@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readLocatorPatchConfig } from "../src/config.js";
 
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-const previousHashMode = process.env.PI_LOCATOR_PATCH_HASH_MODE;
+const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
 
 afterEach(() => {
   restoreEnv("PI_CODING_AGENT_DIR", previousAgentDir);
-  restoreEnv("PI_LOCATOR_PATCH_HASH_MODE", previousHashMode);
+  restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
 });
 
 async function makeAgentDir(config?: unknown) {
@@ -29,25 +29,34 @@ function restoreEnv(name: string, value: string | undefined): void {
 }
 
 describe("locator patch config", () => {
-  it("reads hash mode from extension config.json", async () => {
-    await makeAgentDir({ hashMode: true });
+  it("reads profile from extension config.json", async () => {
+    await makeAgentDir({ profile: "smart" });
 
-    await expect(readLocatorPatchConfig()).resolves.toEqual({ hashMode: true });
+    await expect(readLocatorPatchConfig()).resolves.toEqual({
+      profile: "smart",
+    });
   });
 
   it("ignores project settings", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-locator-patch-project-"));
     await mkdir(join(cwd, ".pi"));
-    await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ locatorPatch: { hashMode: true } }));
+    await writeFile(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({ locatorPatch: { profile: "hash" } }),
+    );
     await makeAgentDir();
 
-    await expect(readLocatorPatchConfig()).resolves.toEqual({ hashMode: false });
+    await expect(readLocatorPatchConfig()).resolves.toEqual({
+      profile: "classic",
+    });
   });
 
   it("lets environment override global config", async () => {
-    await makeAgentDir({ hashMode: true });
-    process.env.PI_LOCATOR_PATCH_HASH_MODE = "0";
+    await makeAgentDir({ profile: "hash" });
+    process.env.PI_LOCATOR_PATCH_PROFILE = "smart";
 
-    await expect(readLocatorPatchConfig()).resolves.toEqual({ hashMode: false });
+    await expect(readLocatorPatchConfig()).resolves.toEqual({
+      profile: "smart",
+    });
   });
 });

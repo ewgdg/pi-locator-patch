@@ -9,21 +9,21 @@ affects:
 
 ## Intent
 
-Allow locator-patch to switch into all-in hash mode by config or environment override while keeping the existing compact-status behavior as the default.
+Allow locator-patch to switch into all-in hash profile by profile config or environment override while keeping the existing compact-status behavior as the default.
 
 ## Behavior
 
 ```pseudo
 on session start:
-  read hashMode from extension config.json, overridden by PI_LOCATOR_PATCH_HASH_MODE when present
-  ignore project-local configuration for hash mode
+  read profile from extension config.json, overridden by PI_LOCATOR_PATCH_PROFILE when present
+  ignore project-local configuration for hash profile
   active tools := current active tools without edit, write, locator_read, locator_patch
-  if hashMode is true:
+  if profile is hash:
     also remove read
   enable read_hash and patch
 
 when patch succeeds or dry-run validates:
-  if hashMode is false:
+  if profile is classic:
     print compact operation status rows
     return
 

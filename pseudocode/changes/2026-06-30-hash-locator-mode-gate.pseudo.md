@@ -34,7 +34,7 @@ for each update hunk operation row:
     explicit exact locators such as ` :#literal` and `:#literal` still match literal text starting with `#`
 
 patch tool behavior:
-  read current hash mode before parsing patch input
-  parse update hunks with hash locators enabled only when hash mode is enabled
-  keep hash-mode success output behavior unchanged
+  read current profile and per-call receipt/markerless options before parsing patch input
+  parse update hunks with hash locators enabled only when profile/receipt/markerless options enable them
+  keep hash receipt output behavior unchanged
 ```
