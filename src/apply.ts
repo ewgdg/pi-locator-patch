@@ -33,7 +33,7 @@ export interface PatchHunkTranscript {
   lines: PatchTranscriptLine[];
 }
 
-export type PatchMatcherKind = "exact" | "prefix" | "contains" | "suffix" | "subsequence" | "hash" | "combined" | "range" | "unifiedDiff";
+export type PatchMatcherKind = "exact" | "prefix" | "contains" | "suffix" | "subsequence" | "fuzzy" | "hash" | "combined" | "range" | "unifiedDiff";
 
 export interface PatchHunkAudit {
   hunkIndex: number;
@@ -67,23 +67,38 @@ interface AppliedHunk {
   audit: PatchHunkAudit;
 }
 
-type SmartMatcherKind = Extract<PatchMatcherKind, "exact" | "prefix" | "suffix" | "contains" | "subsequence">;
+type SmartMatcherKind = Extract<PatchMatcherKind, "exact" | "prefix" | "suffix" | "contains" | "subsequence" | "fuzzy">;
 
 const SMART_MATCH_RANKS: Record<SmartMatcherKind, number> = {
   exact: 0,
   prefix: 1,
   suffix: 1,
   contains: 2,
-  subsequence: 3
+  subsequence: 3,
+  fuzzy: 4
 };
 const SMART_MATCH_CANDIDATE_LIMIT = 1000;
+const SMART_FUZZY_MIN_TOKEN_LENGTH = 6;
+const SMART_FUZZY_TWO_EDIT_TOKEN_LENGTH = 16;
+const SMART_FUZZY_SINGLE_TOKEN_MIN_LENGTH = 8;
+const SMART_FUZZY_TOTAL_EDIT_LIMIT = 2;
 
 interface ResolvedHunkMatch {
   match: SparseMatch;
   smartMatcherKinds: Map<number, PatchMatcherKind>;
+  smartMatcherEditCosts: Map<number, number>;
 }
 
 interface SmartHunkCandidate extends ResolvedHunkMatch {}
+
+interface SmartMatcherResult {
+  kind: SmartMatcherKind;
+  editCost: number;
+}
+
+interface FuzzySubsequenceScore {
+  editCost: number;
+}
 
 interface PatchLineState {
   content: string;
@@ -327,12 +342,18 @@ function textSelectorMatches(content: string, op: MatchPatchOp): boolean {
 }
 
 function bestSmartMatcherKind(query: string, targetLine: string): SmartMatcherKind | undefined {
-  if (targetLine === query) return "exact";
+  return bestSmartMatcherResult(query, targetLine)?.kind;
+}
+
+function bestSmartMatcherResult(query: string, targetLine: string): SmartMatcherResult | undefined {
+  if (targetLine === query) return { kind: "exact", editCost: 0 };
   if (query.length < 1) return undefined;
-  if (targetLine.startsWith(query)) return "prefix";
-  if (targetLine.endsWith(query)) return "suffix";
-  if (targetLine.includes(query)) return "contains";
-  if (smartTokenSubsequenceMatches(targetLine, query)) return "subsequence";
+  if (targetLine.startsWith(query)) return { kind: "prefix", editCost: 0 };
+  if (targetLine.endsWith(query)) return { kind: "suffix", editCost: 0 };
+  if (targetLine.includes(query)) return { kind: "contains", editCost: 0 };
+  if (smartTokenSubsequenceMatches(targetLine, query)) return { kind: "subsequence", editCost: 0 };
+  const fuzzyEditCost = fuzzyTokenSubsequenceEditCost(targetLine, query);
+  if (fuzzyEditCost !== undefined) return { kind: "fuzzy", editCost: fuzzyEditCost };
   return undefined;
 }
 
@@ -352,6 +373,87 @@ function smartTokenSubsequenceMatches(content: string, query: string): boolean {
 
 function tokenizeSmartSelector(text: string): string[] {
   return text.split(/\s+/).filter((token) => token.length > 0);
+}
+
+function fuzzyTokenSubsequenceEditCost(content: string, query: string): number | undefined {
+  const queryTokens = tokenizeSmartSelector(query);
+  if (queryTokens.length < 1) return undefined;
+  if (queryTokens.length === 1 && queryTokens[0].length < SMART_FUZZY_SINGLE_TOKEN_MIN_LENGTH) return undefined;
+
+  const targetTokens = tokenizeSmartSelector(content);
+  const best = findBestFuzzyTokenSubsequence(queryTokens, targetTokens);
+  if (!best) return undefined;
+  return best.editCost;
+}
+
+function findBestFuzzyTokenSubsequence(queryTokens: readonly string[], targetTokens: readonly string[]): FuzzySubsequenceScore | undefined {
+  let previousRow: Array<FuzzySubsequenceScore | undefined> = targetTokens.map(() => ({ editCost: 0 }));
+  previousRow.unshift({ editCost: 0 });
+
+  for (const queryToken of queryTokens) {
+    const currentRow: Array<FuzzySubsequenceScore | undefined> = [undefined];
+    for (let targetIndex = 1; targetIndex <= targetTokens.length; targetIndex += 1) {
+      const skippedTargetScore = currentRow[targetIndex - 1];
+      const previousTokenScore = previousRow[targetIndex - 1];
+      const tokenEditCost = fuzzyTokenEditCost(queryToken, targetTokens[targetIndex - 1]);
+      const matchedTokenScore = previousTokenScore && tokenEditCost !== undefined
+        ? addFuzzyTokenScore(previousTokenScore, tokenEditCost)
+        : undefined;
+      currentRow[targetIndex] = betterFuzzySubsequenceScore(skippedTargetScore, matchedTokenScore);
+    }
+    previousRow = currentRow;
+  }
+
+  return previousRow[targetTokens.length];
+}
+
+function addFuzzyTokenScore(score: FuzzySubsequenceScore, tokenEditCost: number): FuzzySubsequenceScore | undefined {
+  const editCost = score.editCost + tokenEditCost;
+  if (editCost > SMART_FUZZY_TOTAL_EDIT_LIMIT) return undefined;
+  return { editCost };
+}
+
+function betterFuzzySubsequenceScore(left: FuzzySubsequenceScore | undefined, right: FuzzySubsequenceScore | undefined): FuzzySubsequenceScore | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  return left.editCost <= right.editCost ? left : right;
+}
+
+function fuzzyTokenEditCost(queryToken: string, targetToken: string): number | undefined {
+  if (queryToken === targetToken) return 0;
+  if (queryToken.length < SMART_FUZZY_MIN_TOKEN_LENGTH) return undefined;
+  const maxEdits = queryToken.length >= SMART_FUZZY_TWO_EDIT_TOKEN_LENGTH ? 2 : 1;
+  const editDistance = boundedDamerauLevenshteinDistance(queryToken, targetToken, maxEdits);
+  return editDistance <= maxEdits ? editDistance : undefined;
+}
+
+function boundedDamerauLevenshteinDistance(left: string, right: string, maxDistance: number): number {
+  if (Math.abs(left.length - right.length) > maxDistance) return maxDistance + 1;
+
+  let previousPreviousRow = new Array<number>(right.length + 1).fill(maxDistance + 1);
+  let previousRow = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const currentRow = new Array<number>(right.length + 1);
+    currentRow[0] = leftIndex;
+    let rowMinimum = currentRow[0];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      let distance = Math.min(
+        previousRow[rightIndex] + 1,
+        currentRow[rightIndex - 1] + 1,
+        previousRow[rightIndex - 1] + substitutionCost
+      );
+      if (leftIndex > 1 && rightIndex > 1 && left[leftIndex - 1] === right[rightIndex - 2] && left[leftIndex - 2] === right[rightIndex - 1]) {
+        distance = Math.min(distance, previousPreviousRow[rightIndex - 2] + 1);
+      }
+      currentRow[rightIndex] = distance;
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+    if (rowMinimum > maxDistance) return maxDistance + 1;
+    previousPreviousRow = previousRow;
+    previousRow = currentRow;
+  }
+  return previousRow[right.length];
 }
 
 function combinedSelectorMatches(content: string, selector: NonNullable<MatchPatchOp["combinedSelector"]>): boolean {
@@ -382,7 +484,7 @@ function findResolvedHunkMatch(
       throw new AmbiguousHunkError(`Hunk matched ${matches.length} spans${renderAnchorSearchScope(hunk)}.`, hunkErrorLocation(hunk));
     }
     if (matches.length === 1) {
-      return { match: matches[0], smartMatcherKinds: new Map() };
+      return { match: matches[0], smartMatcherKinds: new Map(), smartMatcherEditCosts: new Map() };
     }
     return undefined;
   }
@@ -574,19 +676,24 @@ function findContiguousSmartMatchCandidates(entries: CurrentLineEntry[], ops: re
 function contiguousSmartMatchCandidateAt(entries: readonly CurrentLineEntry[], ops: readonly Hunk["ops"][number][], start: number): SmartHunkCandidate | undefined {
   const lineIndexes = new Map<number, number>();
   const smartMatcherKinds = new Map<number, PatchMatcherKind>();
+  const smartMatcherEditCosts = new Map<number, number>();
   let consumed = 0;
   for (const [opIndex, op] of ops.entries()) {
     if (!isMatchOp(op)) continue;
     const targetIndex = start + consumed;
-    const matcherKind = matchSmartCandidateLine(entries[targetIndex], op);
-    if (matcherKind === undefined) return undefined;
+    const lineMatch = matchSmartCandidateLine(entries[targetIndex], op);
+    if (lineMatch === undefined) return undefined;
     lineIndexes.set(opIndex, targetIndex);
-    if (op.smart === true) smartMatcherKinds.set(opIndex, matcherKind);
+    if (op.smart === true) {
+      smartMatcherKinds.set(opIndex, lineMatch.kind);
+      smartMatcherEditCosts.set(opIndex, lineMatch.editCost);
+    }
     consumed += 1;
   }
   return {
     match: { start, end: start + consumed, lineIndexes, ranges: new Map() },
-    smartMatcherKinds
+    smartMatcherKinds,
+    smartMatcherEditCosts
   };
 }
 
@@ -603,6 +710,7 @@ function findSparseSmartMatchCandidates(entries: CurrentLineEntry[], ops: readon
       lineIndexes: new Map(),
       ranges: new Map(),
       smartMatcherKinds: new Map(),
+      smartMatcherEditCosts: new Map(),
       candidates
     });
   }
@@ -619,6 +727,7 @@ function collectSparseSmartMatchCandidates(state: {
   lineIndexes: Map<number, number>;
   ranges: Map<number, { start: number; end: number }>;
   smartMatcherKinds: Map<number, PatchMatcherKind>;
+  smartMatcherEditCosts: Map<number, number>;
   candidates: SmartHunkCandidate[];
 }): void {
   if (state.candidates.length > SMART_MATCH_CANDIDATE_LIMIT) return;
@@ -627,7 +736,8 @@ function collectSparseSmartMatchCandidates(state: {
     if (state.position <= state.searchEnd) {
       state.candidates.push({
         match: { start: state.start, end: state.position, lineIndexes: state.lineIndexes, ranges: state.ranges },
-        smartMatcherKinds: state.smartMatcherKinds
+        smartMatcherKinds: state.smartMatcherKinds,
+        smartMatcherEditCosts: state.smartMatcherEditCosts
       });
     }
     return;
@@ -636,12 +746,13 @@ function collectSparseSmartMatchCandidates(state: {
   const op = state.ops[opIndex];
   if (isMatchOp(op)) {
     if (state.position >= state.searchEnd) return;
-    const matcherKind = matchSmartCandidateLine(state.entries[state.position], op);
-    if (matcherKind === undefined) return;
+    const lineMatch = matchSmartCandidateLine(state.entries[state.position], op);
+    if (lineMatch === undefined) return;
     const lineIndexes = new Map(state.lineIndexes);
     lineIndexes.set(opIndex, state.position);
-    const smartMatcherKinds = op.smart === true ? new Map(state.smartMatcherKinds).set(opIndex, matcherKind) : state.smartMatcherKinds;
-    collectSparseSmartMatchCandidates({ ...state, opIndex: opIndex + 1, position: state.position + 1, lineIndexes, smartMatcherKinds });
+    const smartMatcherKinds = op.smart === true ? new Map(state.smartMatcherKinds).set(opIndex, lineMatch.kind) : state.smartMatcherKinds;
+    const smartMatcherEditCosts = op.smart === true ? new Map(state.smartMatcherEditCosts).set(opIndex, lineMatch.editCost) : state.smartMatcherEditCosts;
+    collectSparseSmartMatchCandidates({ ...state, opIndex: opIndex + 1, position: state.position + 1, lineIndexes, smartMatcherKinds, smartMatcherEditCosts });
     return;
   }
 
@@ -653,12 +764,12 @@ function collectSparseSmartMatchCandidates(state: {
   }
 }
 
-function matchSmartCandidateLine(line: CurrentLineEntry | undefined, op: MatchPatchOp): PatchMatcherKind | undefined {
+function matchSmartCandidateLine(line: CurrentLineEntry | undefined, op: MatchPatchOp): { kind: PatchMatcherKind; editCost: number } | undefined {
   if (!line || !line.availableForHunkMatch || !hasMatchSelector(op)) return undefined;
   if (op.hash !== undefined && op.hash !== line.hash.slice(0, op.hash.length)) return undefined;
-  if (op.smart !== true) return textSelectorMatches(line.content, op) ? "exact" : undefined;
+  if (op.smart !== true) return textSelectorMatches(line.content, op) ? { kind: "exact", editCost: 0 } : undefined;
   if (op.content === undefined) return undefined;
-  return bestSmartMatcherKind(op.content, line.content);
+  return bestSmartMatcherResult(op.content, line.content);
 }
 
 function smartOpIndexes(ops: readonly Hunk["ops"][number][]): number[] {
@@ -676,12 +787,16 @@ function smartCandidateDominates(left: SmartHunkCandidate, right: SmartHunkCandi
     const rightRank = smartMatcherRank(right.smartMatcherKinds.get(opIndex));
     if (leftRank > rightRank) return false;
     if (leftRank < rightRank) hasBetterRow = true;
+    const leftEditCost = left.smartMatcherEditCosts.get(opIndex) ?? 0;
+    const rightEditCost = right.smartMatcherEditCosts.get(opIndex) ?? 0;
+    if (leftEditCost > rightEditCost) return false;
+    if (leftEditCost < rightEditCost) hasBetterRow = true;
   }
   return hasBetterRow;
 }
 
 function smartMatcherRank(kind: PatchMatcherKind | undefined): number {
-  if (kind === "exact" || kind === "prefix" || kind === "suffix" || kind === "contains" || kind === "subsequence") {
+  if (kind === "exact" || kind === "prefix" || kind === "suffix" || kind === "contains" || kind === "subsequence" || kind === "fuzzy") {
     return SMART_MATCH_RANKS[kind];
   }
   throw new Error("Internal patch error: missing smart matcher kind.");

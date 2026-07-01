@@ -446,6 +446,35 @@ describe("applyPatchToText", () => {
     expect(result.hunkAudits[0].matcherKinds).toEqual(["subsequence"]);
   });
 
+  it("uses strict fuzzy token-subsequence matching as the last smart tier", () => {
+    const result = applyPatchToText("return profilePolicy;", patch("-~return profilePolciy;"));
+
+    expect(result.text).toBe("");
+    expect(result.hunkAudits[0].matcherKinds).toEqual(["fuzzy"]);
+  });
+
+  it("prefers lower fuzzy edit cost when smart candidates only differ by typo distance", () => {
+    const result = applyPatchToText("return profilePolicx;\nreturn profilePolicy;", patch("-~return profilePolciy;"));
+
+    expect(result.text).toBe("return profilePolicx;");
+    expect(result.hunkAudits[0].matcherKinds).toEqual(["fuzzy"]);
+  });
+
+  it("rejects fuzzy matches for short tokens", () => {
+    expect(() => applyPatchToText("a bet", patch("-~bot"))).toThrow(StaleHunkError);
+  });
+
+  it("allows all-fuzzy multi-token selectors when the match is unique", () => {
+    const result = applyPatchToText("profilePolicy selectorConfig", patch("-~profilePolciy selectorConfg"));
+
+    expect(result.text).toBe("");
+    expect(result.hunkAudits[0].matcherKinds).toEqual(["fuzzy"]);
+  });
+
+  it("throws ambiguous when fuzzy smart candidates have the same edit cost", () => {
+    expect(() => applyPatchToText("return profilePolicy;\nreturn profilePolciy?", patch("-~return profilePolciy;"))).toThrow(AmbiguousHunkError);
+  });
+
   it("uses fixed selectors and sparse ranges with smart hunk matching", () => {
     const constrained = applyPatchToText("unique\ntarget one\nother\ntarget two", patch(" :unique", "-~target", "+replacement"));
     expect(constrained.text).toBe("unique\nreplacement\nother\ntarget two");

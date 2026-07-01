@@ -115,7 +115,8 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
       ### Hunk Match: Smart Profile
       Context/delete rows use smart selectors.
       Use \` <text>\` rows for context and \`-<text>\` rows for deletes. Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
-      Smart rows resolve independently to exact, prefix, suffix, contains, or whitespace token-subsequence match; the whole hunk applies only with one dominance winner.
+      Smart rows resolve independently to exact, prefix, suffix, contains, whitespace token-subsequence, or strict bounded fuzzy token-subsequence match; the whole hunk applies only with one dominance winner.
+      Fuzzy matching is last-tier, token-based, case-sensitive, and capped at 1 edit for tokens under 16 chars, 2 edits for longer tokens, and 2 total edits per selector.
       Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
   }
@@ -169,7 +170,7 @@ function buildPatchParameterExamples(profile: SelectorPatchProfile): string {
       +new target words
       </patch>
       <explanation>
-      Smart matching picks exact/prefix/suffix/contains/subsequence as needed.
+      Smart matching picks exact/prefix/suffix/contains/subsequence/fuzzy as needed.
       </explanation>
       </example>
       <example description="smart range deletion">
