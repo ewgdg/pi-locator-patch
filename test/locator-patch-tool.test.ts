@@ -13,10 +13,12 @@ async function makePlainTempDir() {
 }
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 const previousProfile = process.env.PI_LOCATOR_PATCH_PROFILE;
+const previousTmpDir = process.env.TMPDIR;
 
 afterEach(() => {
   restoreEnv("PI_CODING_AGENT_DIR", previousAgentDir);
   restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
+  restoreEnv("TMPDIR", previousTmpDir);
 });
 
 async function makeTempDir() {
@@ -146,7 +148,19 @@ describe("patch visible status", () => {
     expect(description).toContain("### Hunk Match: Classic Profile");
     expect(description).toContain("<content>\naaaaaaaaaab\naaaaacaaaaa\nbbbbbbbbbba\n</content>");
     expect(description).toContain("@@\n :before\n :\n-:\n :after\n+\n</patch>");
+    expect(description).not.toContain("<policy>");
     expect(description).not.toContain("markerless_locator");
+  });
+
+  it("keeps patch behavior policy in one prompt guideline chunk", () => {
+    expect(patchTool.promptGuidelines).toHaveLength(1);
+    const guideline = patchTool.promptGuidelines?.[0] ?? "";
+
+    expect(guideline).toContain("<patch_tool_policy>");
+    expect(guideline).toContain("classic profile active");
+    expect(guideline).toContain("Token efficiency is the highest priority");
+    expect(guideline).toContain("Use range locator whenever possible");
+    expect(guideline).toContain("</patch_tool_policy>");
   });
 
   it("is agent-visible as a hash receipt with locator cost warning", async () => {
@@ -996,6 +1010,35 @@ describe("patch visible status", () => {
     await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe(
       patch,
     );
+  });
+
+  it("does not let retry patch serialization failure mask the patch failure", async () => {
+    const dir = await makePlainTempDir();
+    const file = join(dir, "file.txt");
+    await writeFile(file, "old\n");
+    process.env.TMPDIR = join(dir, "missing-tmp");
+
+    const message = await rejectionMessage(
+      patchTool.execute(
+        "tool-call",
+        {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: file.txt",
+            "@@",
+            "-:absent",
+            "*** End Patch",
+          ].join("\n"),
+        },
+        undefined,
+        undefined,
+        { cwd: dir } as never,
+      ),
+    );
+
+    expect(message).toContain("[E_STALE_HUNK]");
+    expect(message).toContain("Retry patch unavailable:");
+    expect(message).not.toContain("Retry patch: ");
   });
 
   it("dry_run validates the whole patch without writing earlier valid operations", async () => {

@@ -449,7 +449,7 @@ function formatPatchErrorResultText(resultText: string | undefined): string {
 
   const lines = resultText.split("\n");
   const failedSection = extractPatchErrorSection(lines, "Failed:", ["Skipped:", "Retry patch:"]);
-  const retryPatchLine = lines.find((line) => line.startsWith("Retry patch:"));
+  const retryPatchLine = lines.find((line) => line.startsWith("Retry patch"));
   return [lines[0], failedSection, retryPatchLine].filter((part): part is string => Boolean(part)).join("\n");
 }
 

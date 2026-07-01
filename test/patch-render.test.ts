@@ -248,6 +248,31 @@ describe("patch renderer helpers", () => {
     expect(rendered).not.toContain("Skipped:\n(none)");
   });
 
+
+
+  it("renders retry patch serialization failures in compact partial errors", () => {
+    const rendered = buildPatchResultRenderText({
+      resultText: [
+        "[E_PARTIAL_PATCH] Patch stopped after 0 applied operations.",
+        "Applied:",
+        "(none)",
+        "Failed:",
+        "*** Update File: src/file.ts",
+        "[E_STALE_HUNK] Could not find hunk match.",
+        "Skipped:",
+        "(none)",
+        "Retry patch unavailable: serializer failed"
+      ].join("\n"),
+      details: undefined,
+      expanded: false,
+      isPartial: false,
+      isError: true,
+      theme
+    });
+
+    expect(rendered).toContain("Retry patch unavailable: serializer failed");
+  });
+
   it("renders error with input preview centered on reported line", () => {
     const patch = [
       "*** Begin Patch",

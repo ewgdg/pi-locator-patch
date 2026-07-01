@@ -53,6 +53,7 @@ describe("extension registration", () => {
       expect(activeTools).toContain("read");
       expect(activeTools).not.toContain("read_hash");
       expect(activeTools).toContain("patch");
+      expect(patchTool.promptGuidelines).toHaveLength(1);
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "classic profile active",
       );
@@ -104,6 +105,7 @@ describe("extension registration", () => {
       expect(activeTools).toContain("read");
       expect(activeTools).not.toContain("read_hash");
       expect(activeTools).toContain("patch");
+      expect(patchTool.promptGuidelines).toHaveLength(1);
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "smart profile active",
       );
@@ -151,6 +153,7 @@ describe("extension registration", () => {
       expect(activeTools).toContain("read");
       expect(activeTools).not.toContain("read_hash");
       expect(activeTools).toContain("patch");
+      expect(patchTool.promptGuidelines).toHaveLength(1);
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "Hash profile active",
       );

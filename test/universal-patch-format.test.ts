@@ -289,4 +289,17 @@ describe("universal patch parser", () => {
     });
   });
 
+  it("serializes empty smart locators", () => {
+    const source = [
+      "*** Begin Patch",
+      "*** Update File: existing.txt",
+      "@@",
+      " ~",
+      "-~",
+      "*** End Patch"
+    ].join("\n");
+
+    expect(serializeUniversalPatch(parseUniversalPatch(source).operations)).toBe(source);
+  });
+
 });

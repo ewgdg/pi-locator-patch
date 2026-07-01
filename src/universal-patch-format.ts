@@ -123,8 +123,8 @@ function serializeTextSelector(op: Patch["hunks"][number]["ops"][number], option
     return `${op.kind === "context" ? " ?" : "-?"}${JSON.stringify(combinedSelector)}`;
   }
   if (op.smart === true) {
-    if (op.content === undefined || op.content.length === 0) {
-      throw new InvalidPatchError("Smart locators require non-empty text content.");
+    if (op.content === undefined) {
+      throw new InvalidPatchError("Smart locators require text content.", { inputLine: op.inputLine });
     }
     if (usesSmartMarkerlessRows(op, options)) return op.kind === "context" ? op.content : `-${op.content}`;
     return `${op.kind === "context" ? " ~" : "-~"}${op.content}`;

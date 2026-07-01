@@ -63,7 +63,6 @@ import { dedentBlock } from "../dedent.js";
 
 function buildPatchParameterDescription(profile: LocatorPatchProfile): string {
   const hunkMatchDescription = indentNonBlankLines(buildPatchHunkMatchDescription(profile), "    ");
-  const profilePolicy = indentNonBlankLines(buildPatchProfilePolicy(profile), "    ");
   const examples = indentNonBlankLines(buildPatchParameterExamples(profile), "    ");
   return dedentBlock(`
     <description>
@@ -89,14 +88,6 @@ ${hunkMatchDescription}
     The syntax is \`+<text>\`, where \`<text>\` is raw line content.
     Only hunk sections or \`Add File\` sections may insert lines.
     </description>
-
-    <policy>
-    <important>Token efficiency is the highest priority.</important>
-${profilePolicy}
-    <important>Use range locator whenever possible for hunks > 3 lines.</important>
-    Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
-    If the tool returns a retry patch file containing large chunks of unapplied operations due to failures, fix the retry patch file and pass it via \`patch_file\` instead of re-emitting large patch text.
-    </policy>
 
     <caveats>
     Only \`Update File\` sections can have hunk matches.
@@ -377,7 +368,7 @@ export const patchTool = defineTool({
         const change = await applyOperationSequentially(ctx.cwd, operation);
         plannedChanges.push(change);
       } catch (error) {
-        const retryPatchPath = await writeRetryPatch(
+        const retryPatch = await tryWriteRetryPatch(
           universalPatch.operations.slice(index),
           executionOptions.parseOptions,
         );
@@ -386,14 +377,15 @@ export const patchTool = defineTool({
             appliedChanges: plannedChanges,
             failedOperation: operation,
             skippedOperations: universalPatch.operations.slice(index + 1),
-            retryPatchPath,
+            retryPatch,
             cause: error,
           }),
         );
         Object.assign(partialError, {
           appliedOperationCount: plannedChanges.length,
           failedOperationIndex: index,
-          retryPatchPath,
+          ...(retryPatch.path ? { retryPatchPath: retryPatch.path } : {}),
+          ...(retryPatch.error ? { retryPatchError: retryPatch.error } : {}),
         });
         throw partialError;
       }
@@ -473,26 +465,29 @@ function buildPatchToolParameters(profile: LocatorPatchProfile) {
 }
 
 function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
-  const guidelines = [];
+  return [
+    dedentBlock(`
+      <patch_tool_policy>
+      ${buildPatchProfilePromptGuideline(profile)}
+      ${profile === "classic" ? "Classic profile supports explicit locator markers (`:`, `^`, `*`, `$`, `?`, `~`, and hash `#` when hash receipt is enabled)." : "Profile controls context/delete row parsing; no per-call row-parsing override exists."}
+      <important>Token efficiency is the highest priority.</important>
+      ${buildPatchProfilePolicy(profile)}
+      <important>Use range locator whenever possible for hunks > 3 lines.</important>
+      Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
+      If the tool returns a retry patch file containing large chunks of unapplied operations due to failures, fix the retry patch file and pass it via \`patch_file\` instead of re-emitting large patch text.
+      </patch_tool_policy>
+    `),
+  ];
+}
+
+function buildPatchProfilePromptGuideline(profile: LocatorPatchProfile): string {
   if (profile === "hash") {
-    guidelines.push(
-      "Hash profile active: update hunk rows use hashes: use `a`, `-b3`, ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.",
-    );
-  } else if (profile === "smart") {
-    guidelines.push(
-      "Patch tool smart profile active: context/delete rows use smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.",
-    );
-  } else {
-    guidelines.push(
-      "Patch tool classic profile active: context/delete rows without locator markers use exact unified-diff behavior; hash locators and hash receipts require `receipt: \"hash\"`.",
-    );
+    return "Hash profile active: update hunk rows use hashes: use `a`, `-b3`, ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.";
   }
-  guidelines.push(
-    profile === "classic"
-      ? "Classic profile supports explicit locator markers (`:`, `^`, `*`, `$`, `?`, `~`, and hash `#` when hash receipt is enabled)."
-      : "Profile controls context/delete row parsing; no per-call row-parsing override exists.",
-  );
-  return guidelines;
+  if (profile === "smart") {
+    return "smart profile active: context/delete rows use smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.";
+  }
+  return "classic profile active: context/delete rows without locator markers use exact unified-diff behavior; hash locators and hash receipts require `receipt: \"hash\"`.";
 }
 
 function resolvePatchExecutionOptions(
@@ -753,6 +748,17 @@ async function writeRetryPatch(
   return retryPatchPath;
 }
 
+async function tryWriteRetryPatch(
+  operations: readonly UniversalPatchOperation[],
+  parseOptions: ParsePatchOptions,
+): Promise<{ path?: string; error?: unknown }> {
+  try {
+    return { path: await writeRetryPatch(operations, parseOptions) };
+  } catch (error) {
+    return { error };
+  }
+}
+
 async function writeRawRetryPatch(patchText: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
@@ -768,7 +774,7 @@ function renderSequentialFailureMessage(args: {
   appliedChanges: readonly PlannedFileChange[];
   failedOperation: UniversalPatchOperation;
   skippedOperations: readonly UniversalPatchOperation[];
-  retryPatchPath: string;
+  retryPatch: { path?: string; error?: unknown };
   cause: unknown;
 }): string {
   const sections = [
@@ -779,9 +785,14 @@ function renderSequentialFailureMessage(args: {
     `${renderOperationHeader(args.failedOperation)}\n${formatCause(args.cause)}`,
     "Skipped:",
     renderOperationList(args.skippedOperations),
-    `Retry patch: ${args.retryPatchPath}`,
+    renderRetryPatchStatus(args.retryPatch),
   ];
   return sections.join("\n");
+}
+
+function renderRetryPatchStatus(retryPatch: { path?: string; error?: unknown }): string {
+  if (retryPatch.path) return `Retry patch: ${retryPatch.path}`;
+  return `Retry patch unavailable: ${formatCause(retryPatch.error)}`;
 }
 
 function renderAppliedOperationList(
