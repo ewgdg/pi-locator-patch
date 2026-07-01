@@ -149,10 +149,10 @@ function parseHunkOperationLine(line: string, hashFn: HashFunction, inputLine: n
     return parsePatchOp(line, hashFn, inputLine);
   }
   if (options.strictHashRows) {
-    return parseHashMarkerlessRow(line, inputLine);
+    return parseHashProfileRow(line, inputLine);
   }
   if (options.profile === "smart") {
-    return parseSmartMarkerlessRow(line, inputLine);
+    return parseSmartProfileRow(line, inputLine);
   }
   return parseClassicMarkerfulRow(line, hashFn, inputLine, options.hashLocatorsEnabled);
 }
@@ -175,10 +175,9 @@ function parseClassicMarkerfulRow(line: string, hashFn: HashFunction, inputLine:
   return parsePatchOp(line, hashFn, inputLine);
 }
 
-function parseSmartMarkerlessRow(line: string, inputLine: number): PatchOp {
-  if (line === "...") {
-    return { kind: "range", rangeKind: "context", inputLine, authoredCharCount: line.length };
-  }
+function parseSmartProfileRow(line: string, inputLine: number): PatchOp {
+  if (line === "") return parseSmartPatchOp("context", "", line, inputLine);
+  if (line.startsWith(" ")) return parseSmartContextRow(line.slice(1), line, inputLine);
   if (line.startsWith("-")) {
     const selector = line.slice(1);
     if (selector === "...") {
@@ -186,17 +185,28 @@ function parseSmartMarkerlessRow(line: string, inputLine: number): PatchOp {
     }
     return parseSmartPatchOp("delete", selector, line, inputLine);
   }
-  return parseSmartPatchOp("context", line, line, inputLine);
+  throw new InvalidPatchError("Malformed patch operation. Use context, delete, insert, or range row.", { inputLine });
 }
 
-function parseHashMarkerlessRow(line: string, inputLine: number): PatchOp {
-  if (line.startsWith("-")) {
-    return parseHashMarkerlessMatchOrRange("delete", line.slice(1), line, inputLine);
+function parseSmartContextRow(selector: string, line: string, inputLine: number): PatchOp {
+  if (selector === "...") {
+    return { kind: "range", rangeKind: "context", inputLine, authoredCharCount: line.length };
   }
-  return parseHashMarkerlessMatchOrRange("context", line, line, inputLine);
+  return parseSmartPatchOp("context", selector, line, inputLine);
 }
 
-function parseHashMarkerlessMatchOrRange(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
+function parseHashProfileRow(line: string, inputLine: number): PatchOp {
+  if (line === "") return { kind: "context", content: "", textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
+  if (line.startsWith(" ")) {
+    return parseHashProfileMatchOrRange("context", line.slice(1), line, inputLine);
+  }
+  if (line.startsWith("-")) {
+    return parseHashProfileMatchOrRange("delete", line.slice(1), line, inputLine);
+  }
+  throw new InvalidPatchError("Malformed patch operation. Use context, delete, insert, or range row.", { inputLine });
+}
+
+function parseHashProfileMatchOrRange(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
   if (selector === "...") {
     return { kind: "range", rangeKind: kind, inputLine, authoredCharCount: line.length };
   }
@@ -397,7 +407,7 @@ function parseSuffixPatchOp(kind: MatchPatchOpKind, content: string, _line: stri
 
 function parseHashPatchOp(kind: MatchPatchOpKind, hash: string, _line: string, inputLine: number): MatchPatchOp {
   if (!isHash(hash)) {
-    throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 1 to 4 base64url characters after #.`, { inputLine });
+    throw new InvalidPatchError(`Malformed ${kind} hash locator. Expected 1 to 4 base64url characters.`, { inputLine });
   }
   return { kind, hash, inputLine, authoredCharCount: _line.length };
 }

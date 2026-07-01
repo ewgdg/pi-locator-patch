@@ -170,7 +170,7 @@ function serializeTextSelector(op: Patch["hunks"][number]["ops"][number], option
     if (op.content === undefined) {
       throw new InvalidPatchError("Smart locators require text content.", { inputLine: op.inputLine });
     }
-    if (usesSmartMarkerlessRows(op, options)) return op.kind === "context" ? op.content : `-${op.content}`;
+    if (usesSmartProfileRows(op, options)) return op.kind === "context" ? ` ${op.content}` : `-${op.content}`;
     return `${op.kind === "context" ? " ~" : "-~"}${op.content}`;
   }
   if (op.textSelector === "prefix") return `${op.kind === "context" ? " ^" : "-^"}${op.content ?? ""}`;
@@ -180,7 +180,7 @@ function serializeTextSelector(op: Patch["hunks"][number]["ops"][number], option
 }
 
 function rangePatchOp(kind: "context" | "delete", options: SerializeUniversalPatchOptions): string {
-  return `${kind === "context" ? contextPrefix(options) : "-"}...`;
+  return `${kind === "context" ? contextPrefix() : "-"}...`;
 }
 
 function textPatchOpPrefix(kind: "context" | "delete"): string {
@@ -188,24 +188,20 @@ function textPatchOpPrefix(kind: "context" | "delete"): string {
 }
 
 function hashPatchOpPrefix(kind: "context" | "delete", options: SerializeUniversalPatchOptions): string {
-  if (usesStrictHashRows(options)) return kind === "context" ? "" : "-";
+  if (usesStrictHashRows(options)) return kind === "context" ? " " : "-";
   return kind === "context" ? " #" : "-#";
 }
 
-function contextPrefix(options: SerializeUniversalPatchOptions): string {
-  return usesMarkerlessRows(options) ? "" : " ";
+function contextPrefix(): string {
+  return " ";
 }
 
 function usesStrictHashRows(options: SerializeUniversalPatchOptions): boolean {
   return options.strictHashRows === true || options.profile === "hash";
 }
 
-function usesSmartMarkerlessRows(op: Patch["hunks"][number]["ops"][number], options: SerializeUniversalPatchOptions): boolean {
+function usesSmartProfileRows(op: Patch["hunks"][number]["ops"][number], options: SerializeUniversalPatchOptions): boolean {
   return op.kind !== "insert" && op.kind !== "range" && op.smart === true && options.profile === "smart";
-}
-
-function usesMarkerlessRows(options: SerializeUniversalPatchOptions): boolean {
-  return options.profile === "smart" || usesStrictHashRows(options);
 }
 
 function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction, bodyStartLine: number, options: ParsePatchOptions): UniversalPatchOperation {

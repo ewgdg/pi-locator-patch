@@ -41,7 +41,7 @@ function restoreEnv(name: string, value: string | undefined): void {
 const row = (prefix: " " | "-" | "+", content: string) =>
   prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 const hashProfileRow = (prefix: " " | "-" | "+", content: string) =>
-  prefix === "+" ? `${prefix}${content}` : prefix === "-" ? `-${hashLine(content)}` : hashLine(content);
+  prefix === "+" ? `${prefix}${content}` : `${prefix}${hashLine(content)}`;
 const hashContext = (content: string) => ` ${hashLine(content)}`;
 const resultText = (result: Awaited<ReturnType<typeof patchTool.execute>>) => {
   const content = result.content[0];
@@ -274,7 +274,7 @@ describe("patch visible status", () => {
     ).rejects.toThrow("[E_INVALID_PATCH]");
   });
 
-  it("uses markerless hashes and malformed hash errors in hash profile", async () => {
+  it("uses hash selectors and malformed hash errors in hash profile", async () => {
     const dir = await makeTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old");
@@ -330,7 +330,7 @@ describe("patch visible status", () => {
       "*** Begin Patch",
       "*** Update File: file.txt",
       "@@",
-      "anchor",
+      " anchor",
       "-old value",
       "+new value",
       "*** End Patch",
@@ -348,7 +348,7 @@ describe("patch visible status", () => {
       [
         "*** Update File: file.txt",
         "Applied",
-        "Warning: locator cost is 72.7% of baseline. Use shorter locators or ... ranges.",
+        "Warning: locator cost is 77.3% of baseline. Use shorter locators or ... ranges.",
       ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe(
@@ -356,7 +356,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("does not allow per-call markerless parsing override in hash profile", async () => {
+  it("does not allow per-call row-parsing override in hash profile", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");
@@ -392,7 +392,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("uses markerless hashes and hash receipt with the configured hash profile", async () => {
+  it("uses hash selectors and hash receipt with the configured hash profile", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");
@@ -433,7 +433,7 @@ describe("patch visible status", () => {
     await expect(readFile(file, "utf8")).resolves.toBe("new");
   });
 
-  it("keeps markerless smart rows in retry patches for configured markerless defaults", async () => {
+  it("keeps smart unified-diff rows in retry patches for configured smart defaults", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");

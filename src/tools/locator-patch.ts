@@ -69,7 +69,7 @@ function buildPatchParameterDescription(profile: LocatorPatchProfile): string {
   return dedentBlock(`
     <description>
     Inline patch text. Mutually exclusive with \`patch_file\`.
-    No outer wrapper; start directly with a file section header. File sections have no closing marker; the next file section header or end of input ends the current section.
+    No outer wrapper; start directly with a file section header. File sections have no closing delimiter; the next file section header or end of input ends the current section.
     ## File Sections
     A patch may contain multiple \`*** Add File\`, \`*** Update File\`, and \`*** Delete File\` sections;
     a file section header includes a file path.
@@ -114,20 +114,19 @@ function buildPatchHunkMatchDescription(profile: LocatorPatchProfile): string {
     return dedentBlock(`
       ### Hunk Match: Smart Profile
       Context/delete rows use smart locators.
-      Use plain text rows for context and \`-<text>\` rows for deletes. Use \`-\` to delete a blank line.
-      Bare context rows may omit leading space.
+      Use \` <text>\` rows for context and \`-<text>\` rows for deletes. Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
       Smart rows resolve independently to exact, prefix, suffix, contains, or whitespace token-subsequence match; the whole hunk applies only with one dominance winner.
-      Range rows are \`...\` for preserved/skipped context and \`-...\` for deleted ranges.
+      Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
   }
   if (profile === "hash") {
     return dedentBlock(`
       ### Hunk Match: Hash Profile
-      Context/delete rows identify lines by hash.
+      Context/delete rows identify lines by hash after the unified-diff operator.
       Copy only the 1- to 4-character hash from \`HASH│content\` read output, not the separator or content.
-      Use \`<hash>\` for context and \`-<hash>\` for deletes.
+      Use \` <hash>\` for context and \`-<hash>\` for deletes.
       Use only the hash characters from read output; omit \`#\`.
-      Range rows are \`...\` for preserved/skipped context and \`-...\` for deleted ranges.
+      Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
   }
   return dedentBlock(`
@@ -152,7 +151,7 @@ function buildPatchProfilePolicy(profile: LocatorPatchProfile): string {
     return "Prefer short smart rows. Include enough neighboring smart context or an anchor hint when text may repeat.";
   }
   if (profile === "hash") {
-    return "Prefer the shortest unique hash width available from `read`. Use `...` ranges to avoid listing many unchanged/deleted hashes.";
+    return "Prefer the shortest unique hash width available from `read`. Use ` ...`/`-...` ranges to avoid listing many unchanged/deleted hashes.";
   }
   return "Use partial-match-based locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost. Use hash locators only when hash locators are enabled and a hash is already known. Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in hunk context. Avoid exact text locators and unified-diff format unless needed to disambiguate hunk matches.";
 }
@@ -164,7 +163,7 @@ function buildPatchParameterExamples(profile: LocatorPatchProfile): string {
       <patch>
       *** Update File: path/to/file.txt
       @@
-      stable anchor
+       stable anchor
       -old target words
       +new target words
       </patch>
@@ -176,9 +175,9 @@ function buildPatchParameterExamples(profile: LocatorPatchProfile): string {
       <patch>
       *** Update File: path/to/file.txt
       @@
-      start line
+       start line
       -...
-      end line
+       end line
       </patch>
       <explanation>
       Smart context rows anchor the range. \`-...\` deletes all matched lines between them.
@@ -198,19 +197,19 @@ function buildPatchParameterExamples(profile: LocatorPatchProfile): string {
       @@
       -a
       +new
-      b3
+       b3
       </patch>
       <explanation>
-      Hash profile rows use only the hash before \`│\`. Omit \`#\`.
+      Hash profile rows use unified-diff operators plus only the hash before \`│\`. Omit \`#\`.
       </explanation>
       </example>
       <example description="hash range deletion">
       <patch>
       *** Update File: path/to/file.txt
       @@
-      a
+       a
       -...
-      z9
+       z9
       </patch>
       <explanation>
       \`a\` and \`z9\` are context hashes. \`-...\` deletes the range between them.
@@ -485,10 +484,10 @@ function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
 
 function buildPatchProfilePromptGuideline(profile: LocatorPatchProfile): string {
   if (profile === "hash") {
-    return "Hash profile active: update hunk rows use hashes: use `a`, `-b3`, ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.";
+    return "Hash profile active: update hunk rows use hashes after unified-diff operators: use ` a`, `-b3`, ranges (` ...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.";
   }
   if (profile === "smart") {
-    return "smart profile active: context/delete rows use smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.";
+    return "smart profile active: context/delete rows use unified-diff operators with smart selector text; `read` remains plain text; patch success returns compact status rows unless overridden.";
   }
   return "classic profile active: context/delete rows without locator markers use exact unified-diff behavior; hash locators and hash receipts require `receipt: \"hash\"`.";
 }

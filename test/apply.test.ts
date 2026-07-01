@@ -366,8 +366,8 @@ describe("applyPatchToText", () => {
     expect(result.hunkAudits[0].matcherKinds).toEqual(["exact"]);
   });
 
-  it("applies parsed smart-profile markerless locators", () => {
-    const parsed = parsePatch(["@@", "alpha exact", "-contains target", "+replacement"].join("\n"), undefined, 0, { profile: "smart" });
+  it("applies parsed smart-profile unified-diff-style locators", () => {
+    const parsed = parsePatch(["@@", " alpha exact", "-contains target", "+replacement"].join("\n"), undefined, 0, { profile: "smart" });
     const result = applyPatchToText("alpha exact\nprefix contains target suffix", parsed);
 
     expect(result.text).toBe("alpha exact\nreplacement");
@@ -376,7 +376,7 @@ describe("applyPatchToText", () => {
   });
 
   it("matches blank smart locators exactly", () => {
-    const parsed = parsePatch(["@@", "before", "-", "after"].join("\n"), undefined, 0, { profile: "smart" });
+    const parsed = parsePatch(["@@", " before", "-", " after"].join("\n"), undefined, 0, { profile: "smart" });
     const profileResult = applyPatchToText("before\n\nafter", parsed);
     const explicitResult = applyPatchToText("before\n\nafter", patch(" ~before", "-~", " ~after"));
 

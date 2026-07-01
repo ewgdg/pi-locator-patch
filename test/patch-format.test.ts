@@ -210,8 +210,8 @@ describe("patch parser", () => {
     expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
   });
 
-  it("parses markerless rows with the smart profile", () => {
-    const parsed = parsePatch(["@@", "target text", "-old text", "+new"].join("\n"), undefined, 0, { profile: "smart" });
+  it("parses unified-diff-style rows with the smart profile", () => {
+    const parsed = parsePatch(["@@", " target text", "-old text", "+new"].join("\n"), undefined, 0, { profile: "smart" });
 
     expect(parsed.hunks[0].ops).toMatchObject([
       { kind: "context", content: "target text", textSelector: "exact", smart: true },
@@ -220,18 +220,22 @@ describe("patch parser", () => {
     ]);
   });
 
-  it("preserves leading spaces and marker-looking text in smart profile context rows", () => {
-    const parsed = parsePatch(["@@", "  target text", " ~explicit smart", "-~delete text"].join("\n"), undefined, 0, { profile: "smart" });
+  it("rejects omitted context operators in the smart profile", () => {
+    expect(() => parsePatch("@@\ntarget text", undefined, 0, { profile: "smart" })).toThrow("Malformed patch operation");
+  });
+
+  it("uses the leading space as smart profile context operator", () => {
+    const parsed = parsePatch(["@@", "  target text", "  ~explicit smart", "-~delete text"].join("\n"), undefined, 0, { profile: "smart" });
 
     expect(parsed.hunks[0].ops).toMatchObject([
-      { kind: "context", content: "  target text", textSelector: "exact", smart: true },
+      { kind: "context", content: " target text", textSelector: "exact", smart: true },
       { kind: "context", content: " ~explicit smart", textSelector: "exact", smart: true },
       { kind: "delete", content: "~delete text", textSelector: "exact", smart: true }
     ]);
   });
 
   it("parses blank smart locator rows", () => {
-    expect(parsePatch(["@@", "before", "-", "after"].join("\n"), undefined, 0, { profile: "smart" }).hunks[0].ops).toMatchObject([
+    expect(parsePatch(["@@", " before", "-", " after"].join("\n"), undefined, 0, { profile: "smart" }).hunks[0].ops).toMatchObject([
       { kind: "context", content: "before", textSelector: "exact", smart: true },
       { kind: "delete", content: "", textSelector: "exact", smart: true },
       { kind: "context", content: "after", textSelector: "exact", smart: true }
@@ -242,31 +246,31 @@ describe("patch parser", () => {
     ]);
   });
 
-  it("parses markerless rows with the hash profile", () => {
+  it("parses unified-diff-style rows with the hash profile", () => {
     const hash = hashLine("old").slice(0, 4);
 
-    expect(parsePatch(`@@\n${hash}\n-${hash}`, undefined, 0, { profile: "hash" }).hunks[0].ops).toMatchObject([
+    expect(parsePatch(`@@\n ${hash}\n-${hash}`, undefined, 0, { profile: "hash" }).hunks[0].ops).toMatchObject([
       { kind: "context", hash },
       { kind: "delete", hash }
     ]);
   });
 
-  it("rejects context and hash locator markers in the hash profile", () => {
+  it("rejects bare context rows and hash locator markers in the hash profile", () => {
     const hash = hashLine("old").slice(0, 3);
 
-    expect(() => parsePatch(`@@\n ${hash}`, undefined, 0, { profile: "hash" })).toThrow("Malformed context hash locator");
-    expect(() => parsePatch(`@@\n#${hash}`, undefined, 0, { profile: "hash" })).toThrow("Malformed context hash locator");
+    expect(() => parsePatch(`@@\n${hash}`, undefined, 0, { profile: "hash" })).toThrow("Malformed patch operation");
+    expect(() => parsePatch(`@@\n#${hash}`, undefined, 0, { profile: "hash" })).toThrow("Malformed patch operation");
     expect(() => parsePatch(`@@\n-#${hash}`, undefined, 0, { profile: "hash" })).toThrow("Malformed delete hash locator");
   });
 
   it("keeps classic default behavior and rejects malformed hash profile rows", () => {
     expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
-    expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { profile: "hash" })).toThrow("Malformed context hash locator");
+    expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { profile: "hash" })).toThrow("Malformed patch operation");
   });
 
   it("allows only hash, range, and insert rows in strict hash mode", () => {
     const hash = hashLine("old").slice(0, 3);
-    const parsed = parsePatch(`@@\n${hash}\n-${hash}\n...\n-...\n+literal`, undefined, 0, { strictHashRows: true });
+    const parsed = parsePatch(`@@\n ${hash}\n-${hash}\n ...\n-...\n+literal`, undefined, 0, { strictHashRows: true });
 
     expect(parsed.hunks[0].ops).toMatchObject([
       { kind: "context", hash },
@@ -278,7 +282,7 @@ describe("patch parser", () => {
   });
 
   it("rejects text locators and unified-diff rows in strict hash mode", () => {
-    for (const row of [" :text", "^text", " *text", "-~old", " text longer", "-old value", ""]) {
+    for (const row of [" :text", "^text", " *text", "-~old", " text longer", "-old value"]) {
       expect(() => parsePatch(["@@", row].join("\n"), undefined, 0, { strictHashRows: true })).toThrow("[E_INVALID_PATCH]");
     }
   });
