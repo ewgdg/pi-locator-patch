@@ -477,6 +477,42 @@ describe("patch visible status", () => {
     );
   });
 
+  it("copies failed-tail retry patches from authored input instead of serializing", async () => {
+    const dir = await makePlainTempDir();
+    await writeFile(join(dir, "a.txt"), "old");
+    await writeFile(join(dir, "b.txt"), "present");
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      "-old",
+      "+done",
+      "*** Update File: b.txt",
+      "@@",
+      "-missing",
+      "+done",
+      "*** End Patch",
+    ].join("\n");
+
+    const message = await rejectionMessage(
+      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+        cwd: dir,
+      } as never),
+    );
+
+    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("done");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe(
+      [
+        "*** Begin Patch",
+        "*** Update File: b.txt",
+        "@@",
+        "-missing",
+        "+done",
+        "*** End Patch",
+      ].join("\n"),
+    );
+  });
+
   it("applies update hunks with text-only locators", async () => {
     const diff = ["@@", " :a", "-:old", "+new", " :z"].join("\n");
 
@@ -1012,7 +1048,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("does not let retry patch serialization failure mask the patch failure", async () => {
+  it("does not let retry patch write failure mask the patch failure", async () => {
     const dir = await makePlainTempDir();
     const file = join(dir, "file.txt");
     await writeFile(file, "old\n");

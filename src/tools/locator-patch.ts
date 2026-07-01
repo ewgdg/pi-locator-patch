@@ -49,9 +49,10 @@ import {
 import { type ParsePatchOptions } from "../patch-format.js";
 import { parseText, serializeText } from "../text-lines.js";
 import {
+  copyUniversalPatchInputTail,
   parsePatchInput,
-  serializeUniversalPatch,
   type AddFileOperation,
+  type UniversalPatch,
   type UniversalPatchOperation,
 } from "../universal-patch-format.js";
 import {
@@ -369,8 +370,8 @@ export const patchTool = defineTool({
         plannedChanges.push(change);
       } catch (error) {
         const retryPatch = await tryWriteRetryPatch(
-          universalPatch.operations.slice(index),
-          executionOptions.parseOptions,
+          universalPatch,
+          index,
         );
         const partialError = new PartialPatchError(
           renderSequentialFailureMessage({
@@ -735,12 +736,12 @@ function updateDryRunFileState(
 }
 
 async function writeRetryPatch(
-  operations: readonly UniversalPatchOperation[],
-  parseOptions: ParsePatchOptions,
+  universalPatch: UniversalPatch,
+  startOperationIndex: number,
 ): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   const retryPatchPath = join(directory, "retry.patch");
-  await writeRawFile(retryPatchPath, serializeUniversalPatch(operations, parseOptions), {
+  await writeRawFile(retryPatchPath, copyUniversalPatchInputTail(universalPatch, startOperationIndex), {
     encoding: "utf8",
     mode: 0o600,
     flag: "wx",
@@ -749,11 +750,11 @@ async function writeRetryPatch(
 }
 
 async function tryWriteRetryPatch(
-  operations: readonly UniversalPatchOperation[],
-  parseOptions: ParsePatchOptions,
+  universalPatch: UniversalPatch,
+  startOperationIndex: number,
 ): Promise<{ path?: string; error?: unknown }> {
   try {
-    return { path: await writeRetryPatch(operations, parseOptions) };
+    return { path: await writeRetryPatch(universalPatch, startOperationIndex) };
   } catch (error) {
     return { error };
   }

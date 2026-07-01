@@ -25,6 +25,18 @@ export interface DeleteFileOperation {
 
 export interface UniversalPatch {
   operations: UniversalPatchOperation[];
+  source?: UniversalPatchSource;
+}
+
+export interface UniversalPatchSource {
+  lines: string[];
+  hasBoundaries: boolean;
+  bodyEndIndex: number;
+  operationSources: UniversalPatchOperationSource[];
+}
+
+export interface UniversalPatchOperationSource {
+  startIndex: number;
 }
 
 export interface SerializeUniversalPatchOptions {
@@ -54,8 +66,10 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
   const endIndex = hasBoundaries ? lines.length - 1 : lines.length;
 
   const operations: UniversalPatchOperation[] = [];
+  const operationSources: UniversalPatchOperationSource[] = [];
   let index = startIndex;
   while (index < endIndex) {
+    const sectionStartIndex = index;
     const header = parseSectionHeader(lines[index], lineOffset + index + 1);
     index += 1;
     const bodyStartLine = lineOffset + index + 1;
@@ -65,12 +79,16 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
       index += 1;
     }
     operations.push(parseSection(header, body, hashFn, bodyStartLine, options));
+    operationSources.push({ startIndex: sectionStartIndex });
   }
 
   if (operations.length === 0) {
     throw new InvalidPatchError("Universal patch must contain at least one file operation.");
   }
-  return { operations };
+  return {
+    operations,
+    source: { lines, hasBoundaries, bodyEndIndex: endIndex, operationSources },
+  };
 }
 
 export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
@@ -79,6 +97,21 @@ export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLi
 
 export function serializeUniversalPatch(operations: readonly UniversalPatchOperation[], options: SerializeUniversalPatchOptions = {}): string {
   return ["*** Begin Patch", ...operations.flatMap((operation) => serializeOperation(operation, options)), "*** End Patch"].join("\n");
+}
+
+export function copyUniversalPatchInputTail(patch: UniversalPatch, startOperationIndex: number): string {
+  if (!patch.source) {
+    throw new InvalidPatchError("Retry patch source input was not retained.");
+  }
+  const operationSource = patch.source.operationSources[startOperationIndex];
+  if (!operationSource) {
+    throw new InvalidPatchError("Retry patch operation index is out of range.");
+  }
+  const tailLines = patch.source.lines.slice(operationSource.startIndex, patch.source.bodyEndIndex);
+  const retryLines = patch.source.hasBoundaries
+    ? [OPENING_BOUNDARY, ...tailLines, CLOSING_BOUNDARY]
+    : tailLines;
+  return retryLines.join("\n");
 }
 
 function serializeOperation(operation: UniversalPatchOperation, options: SerializeUniversalPatchOptions): string[] {
