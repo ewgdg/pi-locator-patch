@@ -242,6 +242,25 @@ describe("patch parser", () => {
     expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { markerlessLocator: "hash" })).toThrow("Malformed context hash locator");
   });
 
+  it("allows only hash, range, and insert rows in strict hash mode", () => {
+    const hash = hashLine("old").slice(0, 3);
+    const parsed = parsePatch(`@@\n#${hash}\n-${hash}\n...\n-...\n+literal`, undefined, 0, { strictHashRows: true });
+
+    expect(parsed.hunks[0].ops).toMatchObject([
+      { kind: "context", hash },
+      { kind: "delete", hash },
+      { kind: "range", rangeKind: "context" },
+      { kind: "range", rangeKind: "delete" },
+      { kind: "insert", content: "literal" }
+    ]);
+  });
+
+  it("rejects text locators and unified-diff rows in strict hash mode", () => {
+    for (const row of [" :text", "^text", " *text", "-~old", " text longer", "-old value", ""]) {
+      expect(() => parsePatch(["@@", row].join("\n"), undefined, 0, { strictHashRows: true })).toThrow("[E_INVALID_PATCH]");
+    }
+  });
+
   it("rejects line-number hunk headers", () => {
     expect(() => parsePatch(`@@ -1,1 +1,1 @@\n${row(" ", "ctx")}`)).toThrow("[E_INVALID_PATCH]");
   });

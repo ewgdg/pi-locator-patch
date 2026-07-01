@@ -11,7 +11,12 @@ import {
 import { patchTool } from "../src/tools/locator-patch.js";
 import { readHashTool } from "../src/tools/locator-read.js";
 
-const makeTempDir = () => mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+const makeTempDir = async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
+  process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  delete process.env.PI_LOCATOR_PATCH_PROFILE;
+  return dir;
+};
 const row = (prefix: " " | "-" | "+", content: string) =>
   prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 const renderedRow = (content: string) => `${hashLine(content)}│${content}`;

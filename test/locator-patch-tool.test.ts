@@ -8,6 +8,7 @@ import { patchTool } from "../src/tools/locator-patch.js";
 async function makePlainTempDir() {
   const dir = await mkdtemp(join(tmpdir(), "pi-locator-patch-"));
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  delete process.env.PI_LOCATOR_PATCH_PROFILE;
   return dir;
 }
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -79,7 +80,7 @@ async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
 }
 
 async function patchFile(initialText: string, diff: string, path = "file.txt") {
-  const dir = await makeTempDir();
+  const dir = await makePlainTempDir();
   const file = join(dir, path);
   await writeFile(file, initialText);
   const result = await patchTool.execute(
@@ -323,7 +324,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("lets markerless_locator override the configured profile default", async () => {
+  it("does not let markerless_locator loosen strict hash profile rows", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");
@@ -345,19 +346,17 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
-      "tool-call",
-      { patch, markerless_locator: "smart", receipt: "status" },
-      undefined,
-      undefined,
-      { cwd: dir } as never,
-    );
-
-    expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
-    );
+    await expect(
+      patchTool.execute(
+        "tool-call",
+        { patch, markerless_locator: "smart", receipt: "status" },
+        undefined,
+        undefined,
+        { cwd: dir } as never,
+      ),
+    ).rejects.toThrow("[E_INVALID_PATCH]");
     await expect(readFile(file, "utf8")).resolves.toBe(
-      "anchor line\nnew value",
+      "anchor line\nold value",
     );
   });
 
@@ -559,7 +558,7 @@ describe("patch visible status", () => {
       { cwd: deleteDir } as never,
     );
 
-    const rangeDir = await makeTempDir();
+    const rangeDir = await makePlainTempDir();
     await writeFile(join(rangeDir, "range.txt"), "a\nb\nc\nd");
     const rangePatch = [
       "*** Begin Patch",
@@ -815,7 +814,7 @@ describe("patch visible status", () => {
   });
 
   it("reports stale hunk failures by patch line without echoing locator text", async () => {
-    const dir = await makeTempDir();
+    const dir = await makePlainTempDir();
     await writeFile(join(dir, "a.txt"), "present");
     const longLocator = "missing locator text that should not be repeated";
     const patch = [

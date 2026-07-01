@@ -522,6 +522,9 @@ function buildPatchToolParameters(profile: LocatorPatchProfile) {
 
 function buildMarkerlessLocatorDescription(profile: LocatorPatchProfile): string {
   const defaultLocator = PATCH_PROFILE_DEFAULTS[profile].markerlessLocator;
+  if (profile === "hash") {
+    return `Markerless locator for context/delete rows without a locator marker. Current profile: hash; default: ${defaultLocator}. Hash profile enforces strict hash rows, so this option does not permit text locator rows.`;
+  }
   return `Markerless locator for context/delete rows without a locator marker. Current profile: ${profile}; default: ${defaultLocator}. Override for this call.`;
 }
 
@@ -529,7 +532,7 @@ function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
   const guidelines = [];
   if (profile === "hash") {
     guidelines.push(
-      "Hash profile active: use `read` for hash-line text reads; `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks. Reuse known hashes from prior `read` and prior patch receipts to avoid unnecessary read.",
+      "Hash profile active: update hunk rows are strict: use only hash locators (`#a`, `-#b3`, or markerless hashes), ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks.",
     );
   } else if (profile === "smart") {
     guidelines.push(
@@ -541,7 +544,9 @@ function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
     );
   }
   guidelines.push(
-    "Patch uses configured `profile` (`classic`, `smart`, `hash`) plus per-call `markerless_locator` override for markerless context/delete rows. Explicit locator markers always override defaults.",
+    profile === "hash"
+      ? "Hash profile ignores text locator forms in update hunks; per-call `markerless_locator` does not loosen strict hash rows."
+      : "Patch uses configured `profile` (`classic`, `smart`, `hash`) plus per-call `markerless_locator` override for markerless context/delete rows. Explicit locator markers always override defaults.",
   );
   return guidelines;
 }
@@ -561,6 +566,7 @@ function resolvePatchExecutionOptions(
   return {
     parseOptions: {
       markerlessLocator,
+      strictHashRows: config.profile === "hash",
       hashLocatorsEnabled:
         config.profile === "hash" ||
         receipt === "hash" ||

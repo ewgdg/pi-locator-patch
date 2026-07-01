@@ -63,11 +63,13 @@ export type MarkerlessLocatorOption = MarkerlessLocatorKind | "unified-diff";
 export interface ParsePatchOptions {
   hashLocatorsEnabled?: boolean;
   markerlessLocator?: MarkerlessLocatorOption;
+  strictHashRows?: boolean;
 }
 
 interface NormalizedParsePatchOptions {
   hashLocatorsEnabled: boolean;
   markerlessLocator: MarkerlessLocatorKind;
+  strictHashRows: boolean;
 }
 
 export function parsePatch(patchText: string, hashFn: HashFunction = hashLine, lineOffset = 0, options: ParsePatchOptions = {}): Patch {
@@ -130,7 +132,8 @@ interface PatchOperationLine {
 function normalizeParsePatchOptions(options: ParsePatchOptions): NormalizedParsePatchOptions {
   return {
     hashLocatorsEnabled: options.hashLocatorsEnabled ?? true,
-    markerlessLocator: normalizeMarkerlessLocator(options.markerlessLocator ?? "exact")
+    markerlessLocator: normalizeMarkerlessLocator(options.markerlessLocator ?? "exact"),
+    strictHashRows: options.strictHashRows ?? false
   };
 }
 
@@ -147,6 +150,9 @@ function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn:
 }
 
 function parseHunkOperationLine(line: string, hashFn: HashFunction, inputLine: number, options: NormalizedParsePatchOptions): PatchOp {
+  if (options.strictHashRows) {
+    return parseStrictHashRow(line, hashFn, inputLine);
+  }
   if (line === "") {
     return parseUnifiedDiffOp(line, hashFn, inputLine);
   }
@@ -174,6 +180,29 @@ function parseHunkOperationLine(line: string, hashFn: HashFunction, inputLine: n
     return parseMarkerlessLocatorPatchOp("context", line, line, inputLine, options.markerlessLocator);
   }
   return parsePatchOp(line, hashFn, inputLine);
+}
+
+function parseStrictHashRow(line: string, hashFn: HashFunction, inputLine: number): PatchOp {
+  if (line.startsWith("+")) {
+    return parsePatchOp(line, hashFn, inputLine);
+  }
+  if (line.startsWith("-")) {
+    return parseStrictHashMatchOrRange("delete", line.slice(1), line, inputLine);
+  }
+  if (line.startsWith(" ")) {
+    return parseStrictHashMatchOrRange("context", line.slice(1), line, inputLine);
+  }
+  return parseStrictHashMatchOrRange("context", line, line, inputLine);
+}
+
+function parseStrictHashMatchOrRange(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number): PatchOp {
+  if (selector === "...") {
+    return { kind: "range", rangeKind: kind, inputLine, authoredCharCount: line.length };
+  }
+  if (selector.startsWith("#")) {
+    return parseHashPatchOp(kind, selector.slice(1), line, inputLine);
+  }
+  return parseHashPatchOp(kind, selector, line, inputLine);
 }
 
 const HUNK_HEADER_PATTERN = /^@@(?: @([1-9]\d*)(?:\.\.\.([1-9]\d*))?)?$/;
