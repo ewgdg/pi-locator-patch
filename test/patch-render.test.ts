@@ -8,6 +8,7 @@ import {
   buildPatchResultRenderText,
   formatPatchResultDiff,
   getPatchCharEfficiency,
+  getPatchLocatorEfficiency,
   getPatchMatcherStats,
   getPatchDiffStats,
   getPatchResultDiff,
@@ -136,10 +137,12 @@ describe("patch renderer helpers", () => {
   it("reads and renders patch char efficiency from result details", () => {
     const details = {
       charEfficiency: { patchChars: 5, baselineChars: 9 },
+      locatorEfficiency: { patchChars: 7, baselineChars: 10 },
       diff: "--- a/file\n+++ b/file\n-old text\n+new"
     };
 
     expect(getPatchCharEfficiency(details)).toEqual({ patchChars: 5, baselineChars: 9 });
+    expect(getPatchLocatorEfficiency(details)).toEqual({ patchChars: 7, baselineChars: 10 });
 
     const rendered = buildPatchResultRenderText({
       details,
@@ -150,6 +153,22 @@ describe("patch renderer helpers", () => {
     });
 
     expect(rendered).toContain("<muted>Patch efficiency: 5/9 chars vs baseline (55.6%, saved 44.4%)</muted>");
+    expect(rendered).toContain("<warning>Warning: locator cost is 70.0% of baseline. Use shorter locators or ... ranges.</warning>");
+  });
+
+  it("skips locator cost warning at or below half of baseline", () => {
+    const rendered = buildPatchResultRenderText({
+      details: {
+        locatorEfficiency: { patchChars: 5, baselineChars: 10 },
+        diff: "--- a/file\n+++ b/file\n-old text\n+new"
+      },
+      expanded: false,
+      isPartial: false,
+      isError: false,
+      theme
+    });
+
+    expect(rendered).not.toContain("locator cost");
   });
 
   it("renders collapsed diff with compact limit, color, omission count, and Ctrl+O hint", () => {

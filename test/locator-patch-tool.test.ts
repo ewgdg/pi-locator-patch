@@ -56,6 +56,14 @@ const detailsCharEfficiency = (
       charEfficiency: { patchChars: number; baselineChars: number };
     }
   ).charEfficiency;
+const detailsLocatorEfficiency = (
+  result: Awaited<ReturnType<typeof patchTool.execute>>,
+) =>
+  (
+    result.details as {
+      locatorEfficiency: { patchChars: number; baselineChars: number };
+    }
+  ).locatorEfficiency;
 const patchParameterDescription = () => {
   const parameters = patchTool.parameters as {
     properties: { patch: { description?: string } };
@@ -144,7 +152,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("is agent-visible as a hash receipt with context and inserted lines only", async () => {
+  it("is agent-visible as a hash receipt with locator cost warning", async () => {
     const diff = [
       "@@",
       row(" ", "a"),
@@ -163,6 +171,7 @@ describe("patch visible status", () => {
         hashContext("a"),
         `+${hashLine("new")}`,
         hashContext("z"),
+        "Warning: locator cost is 225.0% of baseline. Use shorter locators or ... ranges.",
       ].join("\n"),
     );
     expect(resultText(result)).not.toContain(hashLine("old"));
@@ -192,7 +201,11 @@ describe("patch visible status", () => {
     );
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 125.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe("new");
   });
@@ -221,7 +234,11 @@ describe("patch visible status", () => {
     );
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 104.2% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe(
       "#define X\n#new\n#literal",
@@ -317,7 +334,11 @@ describe("patch visible status", () => {
     );
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 72.7% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe(
       "anchor line\nnew value",
@@ -395,6 +416,7 @@ describe("patch visible status", () => {
         "*** Update File: file.txt",
         "@@ matched line 1 @@",
         `+${hashLine("new")}`,
+        "Warning: locator cost is 125.0% of baseline. Use shorter locators or ... ranges.",
       ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe("new");
@@ -487,6 +509,10 @@ describe("patch visible status", () => {
     expect(detailsCharEfficiency(result)).toEqual({
       patchChars: 9,
       baselineChars: 13,
+    });
+    expect(detailsLocatorEfficiency(result)).toEqual({
+      patchChars: 5,
+      baselineChars: 9,
     });
   });
   it("counts authored combined locator whitespace and blank unified-diff rows", async () => {
@@ -586,6 +612,18 @@ describe("patch visible status", () => {
       baselineChars: 5,
     });
     expect(detailsCharEfficiency(rangeResult)).toEqual({
+      patchChars: 10,
+      baselineChars: 8,
+    });
+    expect(detailsLocatorEfficiency(addResult)).toEqual({
+      patchChars: 0,
+      baselineChars: 0,
+    });
+    expect(detailsLocatorEfficiency(deleteResult)).toEqual({
+      patchChars: 0,
+      baselineChars: 0,
+    });
+    expect(detailsLocatorEfficiency(rangeResult)).toEqual({
       patchChars: 10,
       baselineChars: 8,
     });
@@ -1193,7 +1231,11 @@ describe("patch visible status", () => {
     const { file, result } = await patchFile("old", universal);
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 150.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     expect(resultText(result)).not.toContain("line-1");
     await expect(readFile(file, "utf8")).resolves.toBe(manyLines.join("\n"));
@@ -1205,7 +1247,11 @@ describe("patch visible status", () => {
     const { file, result } = await patchFile("only", diff);
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "@@ matched line 1 @@"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "@@ matched line 1 @@",
+        "Warning: locator cost is 120.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe("");
   });

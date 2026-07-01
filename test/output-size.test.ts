@@ -95,7 +95,11 @@ describe("tool output size guards", () => {
     );
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 125.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     expect(resultText(result)).not.toContain(hugeReplacement);
     await expect(readFile(file, "utf8")).resolves.toBe(hugeReplacement);
@@ -124,7 +128,11 @@ describe("tool output size guards", () => {
     );
 
     expect(resultText(result)).toBe(
-      ["*** Update File: file.txt", "Applied"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 125.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe(insertedRows.join("\n"));
   });

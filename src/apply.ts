@@ -42,6 +42,8 @@ export interface PatchHunkAudit {
   matcherKinds: PatchMatcherKind[];
   patchCharCount: number;
   baselineCharCount: number;
+  locatorPatchCharCount: number;
+  locatorBaselineCharCount: number;
   survivingContextHashes: string[];
   insertedHashes: string[];
   deletedHashes: string[];
@@ -171,6 +173,8 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
           matcherKinds: [],
           patchCharCount: insertedPatchCharCount,
           baselineCharCount: insertedBaselineCharCount,
+          locatorPatchCharCount: 0,
+          locatorBaselineCharCount: 0,
           survivingContextHashes: [],
           insertedHashes,
           deletedHashes: []
@@ -200,6 +204,8 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
   const transcriptLines: PatchTranscriptLine[] = [];
   let patchCharCount = 0;
   let baselineCharCount = 0;
+  let locatorPatchCharCount = 0;
+  let locatorBaselineCharCount = 0;
 
   for (const [opIndex, op] of hunk.ops.entries()) {
     if (op.kind === "insert") {
@@ -214,19 +220,25 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
     }
 
     if (op.kind === "range") {
-      patchCharCount += authoredCharCount(op, renderRangeLocator(op.rangeKind).length);
+      const authoredRangeCharCount = authoredCharCount(op, renderRangeLocator(op.rangeKind).length);
+      patchCharCount += authoredRangeCharCount;
+      locatorPatchCharCount += authoredRangeCharCount;
       const range = match.ranges.get(opIndex);
       if (!range) {
         throw new Error("Internal patch error: missing sparse range match.");
       }
       if (op.rangeKind === "context") {
-        baselineCharCount += rangeCharCount(lines, range.start, range.end);
+        const baselineRangeCharCount = rangeCharCount(lines, range.start, range.end);
+        baselineCharCount += baselineRangeCharCount;
+        locatorBaselineCharCount += baselineRangeCharCount;
         replacement.push(...lines.slice(range.start, range.end).map(markLineTouched));
         transcriptLines.push({ kind: "contextRange", content: renderSkippedContextRange(range.end - range.start) });
       } else {
         for (let lineIndex = range.start; lineIndex < range.end; lineIndex += 1) {
           const targetContent = lines[lineIndex].content;
-          baselineCharCount += prefixedLineCharCount(targetContent);
+          const baselineLineCharCount = prefixedLineCharCount(targetContent);
+          baselineCharCount += baselineLineCharCount;
+          locatorBaselineCharCount += baselineLineCharCount;
           const targetHash = hashFn(targetContent);
           transcriptLines.push({ kind: "delete", content: targetContent });
           deletedHashes.push(targetHash);
@@ -240,8 +252,12 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
       throw new Error("Internal patch error: missing hash operation match.");
     }
     const targetContent = lines[targetIndex].content;
-    patchCharCount += authoredCharCount(op, renderMatchLocator(op).length);
-    baselineCharCount += prefixedLineCharCount(targetContent);
+    const authoredLocatorCharCount = authoredCharCount(op, renderMatchLocator(op).length);
+    const baselineLocatorCharCount = prefixedLineCharCount(targetContent);
+    patchCharCount += authoredLocatorCharCount;
+    baselineCharCount += baselineLocatorCharCount;
+    locatorPatchCharCount += authoredLocatorCharCount;
+    locatorBaselineCharCount += baselineLocatorCharCount;
     const targetHash = hashFn(targetContent);
     if (op.kind === "context") {
       replacement.push(markLineTouched(lines[targetIndex]));
@@ -265,6 +281,8 @@ function applyHunk(lines: PatchLineState[], hunk: Hunk, hunkIndex: number, hashF
       matcherKinds: buildMatcherKinds(currentEntries, hunk, match, resolvedMatch.smartMatcherKinds),
       patchCharCount,
       baselineCharCount,
+      locatorPatchCharCount,
+      locatorBaselineCharCount,
       survivingContextHashes,
       insertedHashes,
       deletedHashes

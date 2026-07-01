@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { formatLocatorCostWarning, type PatchCharEfficiency } from "../locator-efficiency.js";
 
 export const COLLAPSED_RESULT_DIFF_MAX_LINES = 16;
 export const EXPANDED_RESULT_DIFF_MAX_LINES = 200;
@@ -28,11 +29,6 @@ export interface PatchMatcherStats {
   range: number;
   unifiedDiff: number;
   total: number;
-}
-
-export interface PatchCharEfficiency {
-  patchChars: number;
-  baselineChars: number;
 }
 
 export interface FormattedPatchResultDiff {
@@ -105,10 +101,18 @@ export function getPatchMatcherStats(details: unknown): PatchMatcherStats {
 }
 
 export function getPatchCharEfficiency(details: unknown): PatchCharEfficiency | undefined {
-  if (!isRecord(details) || !isRecord(details.charEfficiency)) {
+  return getPatchEfficiency(details, "charEfficiency");
+}
+
+export function getPatchLocatorEfficiency(details: unknown): PatchCharEfficiency | undefined {
+  return getPatchEfficiency(details, "locatorEfficiency");
+}
+
+function getPatchEfficiency(details: unknown, key: "charEfficiency" | "locatorEfficiency"): PatchCharEfficiency | undefined {
+  if (!isRecord(details) || !isRecord(details[key])) {
     return undefined;
   }
-  const { patchChars, baselineChars } = details.charEfficiency;
+  const { patchChars, baselineChars } = details[key];
   if (!isNonNegativeInteger(patchChars) || !isNonNegativeInteger(baselineChars)) {
     return undefined;
   }
@@ -241,7 +245,8 @@ export function buildPatchResultRenderText(options: {
   const renderedDiff = formatPatchResultDiff(diff, expanded, theme);
   const matcherStatsFooter = formatPatchMatcherStatsFooter(getPatchMatcherStats(details), theme);
   const charEfficiencyFooter = formatPatchCharEfficiencyFooter(getPatchCharEfficiency(details), theme);
-  const body = [`${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}`, renderedDiff.text, matcherStatsFooter, charEfficiencyFooter];
+  const locatorCostWarning = formatPatchLocatorCostWarning(getPatchLocatorEfficiency(details), theme);
+  const body = [`${theme.fg("success", summaryParts[0])} ${summaryParts.slice(1).join(theme.fg("dim", " / "))}`, renderedDiff.text, matcherStatsFooter, charEfficiencyFooter, locatorCostWarning];
 
   return body.filter((part): part is string => Boolean(part)).join("\n");
 }
@@ -322,6 +327,14 @@ function formatPatchCharEfficiencyFooter(efficiency: PatchCharEfficiency | undef
   const ratio = (patchChars / baselineChars) * 100;
   const saved = 100 - ratio;
   return theme.fg("muted", `Patch efficiency: ${patchChars}/${baselineChars} chars vs baseline (${formatPercent(ratio)}, saved ${formatPercent(saved)})`);
+}
+
+function formatPatchLocatorCostWarning(efficiency: PatchCharEfficiency | undefined, theme: PatchRenderTheme): string | undefined {
+  if (!efficiency) {
+    return undefined;
+  }
+  const warning = formatLocatorCostWarning(efficiency);
+  return warning ? theme.fg("warning", warning) : undefined;
 }
 
 function formatPercent(value: number): string {

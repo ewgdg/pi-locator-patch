@@ -40,6 +40,7 @@ import {
   writeNewTextFileAtomically,
   writeTextFileAtomically,
 } from "../fs-text.js";
+import { formatLocatorCostWarning, type PatchCharEfficiency } from "../locator-efficiency.js";
 import {
   countRenderedLines,
   getVisibleOutputOverflow,
@@ -333,11 +334,6 @@ interface PlannedFileChange {
   oldText?: string;
   newText?: string;
   applyResult?: ApplyPatchResult;
-}
-
-interface PatchCharEfficiency {
-  patchChars: number;
-  baselineChars: number;
 }
 
 interface DryRunFileState {
@@ -890,7 +886,9 @@ function buildPatchToolResult(
   dryRun: boolean,
   receipt: PatchReceiptMode,
 ) {
-  const status = buildPatchStatusDecision(plannedChanges, dryRun, receipt);
+  const locatorEfficiency = getPatchLocatorEfficiency(plannedChanges);
+  const locatorWarning = formatLocatorCostWarning(locatorEfficiency);
+  const status = buildPatchStatusDecision(plannedChanges, dryRun, receipt, locatorWarning);
   return {
     content: [{ type: "text" as const, text: status.text }],
     details: {
@@ -915,6 +913,7 @@ function buildPatchToolResult(
         visibleLineCount: status.visibleLineCount,
       },
       charEfficiency: getPatchCharEfficiency(plannedChanges),
+      locatorEfficiency,
     },
   };
 }
@@ -997,9 +996,22 @@ function serializeAddFileText(operation: AddFileOperation): string {
 function getPatchCharEfficiency(
   plannedChanges: readonly PlannedFileChange[],
 ): PatchCharEfficiency {
+  return sumPatchEfficiencies(plannedChanges, getFileChangeCharEfficiency);
+}
+
+function getPatchLocatorEfficiency(
+  plannedChanges: readonly PlannedFileChange[],
+): PatchCharEfficiency {
+  return sumPatchEfficiencies(plannedChanges, getFileChangeLocatorEfficiency);
+}
+
+function sumPatchEfficiencies(
+  plannedChanges: readonly PlannedFileChange[],
+  getChangeEfficiency: (change: PlannedFileChange) => PatchCharEfficiency,
+): PatchCharEfficiency {
   return plannedChanges.reduce(
     (total, change) => {
-      const changeEfficiency = getFileChangeCharEfficiency(change);
+      const changeEfficiency = getChangeEfficiency(change);
       return {
         patchChars: total.patchChars + changeEfficiency.patchChars,
         baselineChars: total.baselineChars + changeEfficiency.baselineChars,
@@ -1033,6 +1045,23 @@ function getFileChangeCharEfficiency(
   );
 }
 
+function getFileChangeLocatorEfficiency(
+  change: PlannedFileChange,
+): PatchCharEfficiency {
+  if (change.operation !== "update") {
+    return { patchChars: 0, baselineChars: 0 };
+  }
+
+  const hunkAudits = change.applyResult?.hunkAudits ?? [];
+  return hunkAudits.reduce(
+    (total, hunkAudit) => ({
+      patchChars: total.patchChars + hunkAudit.locatorPatchCharCount,
+      baselineChars: total.baselineChars + hunkAudit.locatorBaselineCharCount,
+    }),
+    { patchChars: 0, baselineChars: 0 },
+  );
+}
+
 function prefixedTextLinesCharCount(text: string): number {
   return parseText(text).lines.reduce(
     (total, line) => total + line.length + 1,
@@ -1044,15 +1073,18 @@ function buildPatchStatusDecision(
   plannedChanges: readonly PlannedFileChange[],
   dryRun: boolean,
   receipt: PatchReceiptMode,
+  locatorWarning: string | undefined,
 ): PatchStatusDecision {
-  const visibleText =
+  const visibleText = appendOptionalLine(
     receipt === "hash"
       ? renderPatchHashReceiptDiffs(plannedChanges.map(toDiffInput))
-      : renderUniversalPatchStatus(plannedChanges, dryRun);
+      : renderUniversalPatchStatus(plannedChanges, dryRun),
+    locatorWarning,
+  );
   const visibleLineCount = countRenderedLines(visibleText);
   const overflow = getVisibleOutputOverflow(visibleText, visibleLineCount);
   if (overflow) {
-    const text = renderUniversalPatchStatus(plannedChanges, dryRun);
+    const text = appendOptionalLine(renderUniversalPatchStatus(plannedChanges, dryRun), locatorWarning);
     return {
       text,
       omitted: true,
@@ -1067,6 +1099,10 @@ function buildPatchStatusDecision(
     omitted: false,
     visibleLineCount,
   };
+}
+
+function appendOptionalLine(text: string, line: string | undefined): string {
+  return line ? `${text}\n${line}` : text;
 }
 
 function renderUniversalPatchStatus(

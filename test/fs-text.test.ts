@@ -81,7 +81,11 @@ describe("patch tool", () => {
       throw new Error("Expected text content");
     }
     expect(content.text).toBe(
-      ["*** Update File: file.txt", "Validated"].join("\n"),
+      [
+        "*** Update File: file.txt",
+        "Validated",
+        "Warning: locator cost is 125.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
     );
     await expect(readFile(file, "utf8")).resolves.toBe("old");
   });
