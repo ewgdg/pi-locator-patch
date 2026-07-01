@@ -41,7 +41,7 @@ PI_LOCATOR_PATCH_PROFILE=hash pi    # force hash-line read and hash patch defaul
 }
 ```
 
-Configured `profile` sets patch defaults. `markerless_locator` default is profile-based (`classic=exact`, `smart=smart`, `hash=hash`) and can be overridden for one call. `receipt` overrides the configured profile receipt default for one call. Retry patches serialize markerless rows back as explicit locators (`:`, `~`, `#`, `^`, `*`) so they do not depend on the original config.
+Configured `profile` sets patch defaults. `markerless_locator` default is profile-based (`classic=exact`, `smart=smart`, `hash=hash`) and can be overridden for one call. In hash profile, strict hash-only rows apply only when `markerless_locator` is not supplied. `receipt` overrides the configured profile receipt default for one call. Retry patches serialize markerless rows back as explicit locators (`:`, `~`, `#`, `^`, `*`) so they do not depend on the original config.
 
 ```diff
 *** Add File: new.txt

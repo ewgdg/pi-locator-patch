@@ -541,7 +541,7 @@ function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
   }
   guidelines.push(
     profile === "hash"
-      ? "Hash profile ignores text locator forms in update hunks; per-call `markerless_locator` does not loosen strict hash rows."
+      ? "Hash profile uses strict hash-only rows unless per-call `markerless_locator` overrides markerless context/delete parsing."
       : "Patch uses configured `profile` (`classic`, `smart`, `hash`) plus per-call `markerless_locator` override for markerless context/delete rows. Explicit locator markers always override defaults.",
   );
   return guidelines;
@@ -562,7 +562,7 @@ function resolvePatchExecutionOptions(
   return {
     parseOptions: {
       markerlessLocator,
-      strictHashRows: config.profile === "hash",
+      strictHashRows: config.profile === "hash" && params.markerless_locator === undefined,
       hashLocatorsEnabled:
         config.profile === "hash" ||
         receipt === "hash" ||

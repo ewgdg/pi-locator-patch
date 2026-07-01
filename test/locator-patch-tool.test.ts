@@ -345,7 +345,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("does not let markerless_locator loosen strict hash profile rows", async () => {
+  it("lets markerless_locator override strict hash profile rows", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");
@@ -361,23 +361,29 @@ describe("patch visible status", () => {
       "*** Begin Patch",
       "*** Update File: file.txt",
       "@@",
-      "anchor",
+      " anchor line",
       "-old value",
       "+new value",
       "*** End Patch",
     ].join("\n");
 
-    await expect(
-      patchTool.execute(
-        "tool-call",
-        { patch, markerless_locator: "smart", receipt: "status" },
-        undefined,
-        undefined,
-        { cwd: dir } as never,
-      ),
-    ).rejects.toThrow("[E_INVALID_PATCH]");
+    const result = await patchTool.execute(
+      "tool-call",
+      { patch, markerless_locator: "exact", receipt: "status" },
+      undefined,
+      undefined,
+      { cwd: dir } as never,
+    );
+
+    expect(resultText(result)).toBe(
+      [
+        "*** Update File: file.txt",
+        "Applied",
+        "Warning: locator cost is 100.0% of baseline. Use shorter locators or ... ranges.",
+      ].join("\n"),
+    );
     await expect(readFile(file, "utf8")).resolves.toBe(
-      "anchor line\nold value",
+      "anchor line\nnew value",
     );
   });
 
