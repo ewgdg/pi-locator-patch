@@ -102,7 +102,6 @@ async function patchFile(initialText: string, diff: string, path = "file.txt") {
             diff,
             "*** End Patch",
           ].join("\n"),
-      markerless_locator: "exact",
       receipt: "hash",
     },
     undefined,
@@ -138,18 +137,14 @@ describe("patch visible status", () => {
     await expect(readFile(file, "utf8")).resolves.toBe("new\n");
   });
 
-  it("keeps XML tag text aligned with its enclosing tag", () => {
+  it("keeps profile-specific patch parameter text unindented", () => {
     const description = patchParameterDescription();
 
     expect(description).toContain("<description>\nInline patch text.");
-    expect(description).not.toContain("<description>\n  Inline patch text.");
-    expect(description).toMatch(
-      /^ {4}<content>\n {4}aaaaaaaaaab\n {4}aaaaacaaaaa\n {4}bbbbbbbbbba\n {4}<\/content>/m,
-    );
-    expect(description).not.toMatch(/^ {4}<content>\n {6}aaaaaaaaaab/m);
-    expect(description).toMatch(
-      /^ {4}@@\n {5}:before\n {5}:\n {4}-:\n {5}:after\n {4}\+\n {4}<\/patch>/m,
-    );
+    expect(description).toContain("### Hunk Match: Classic Profile");
+    expect(description).toContain("<content>\naaaaaaaaaab\naaaaacaaaaa\nbbbbbbbbbba\n</content>");
+    expect(description).toContain("@@\n :before\n :\n-:\n :after\n+\n</patch>");
+    expect(description).not.toContain("markerless_locator");
   });
 
   it("is agent-visible as a hash receipt with locator cost warning", async () => {
@@ -345,7 +340,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("lets markerless_locator override strict hash profile rows", async () => {
+  it("does not allow per-call markerless parsing override in hash profile", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-locator-patch");
@@ -367,23 +362,17 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
-      "tool-call",
-      { patch, markerless_locator: "exact", receipt: "status" },
-      undefined,
-      undefined,
-      { cwd: dir } as never,
-    );
-
-    expect(resultText(result)).toBe(
-      [
-        "*** Update File: file.txt",
-        "Applied",
-        "Warning: locator cost is 100.0% of baseline. Use shorter locators or ... ranges.",
-      ].join("\n"),
-    );
+    await expect(
+      patchTool.execute(
+        "tool-call",
+        { patch, receipt: "status" },
+        undefined,
+        undefined,
+        { cwd: dir } as never,
+      ),
+    ).rejects.toThrow("[E_INVALID_PATCH]");
     await expect(readFile(file, "utf8")).resolves.toBe(
-      "anchor line\nnew value",
+      "anchor line\nold value",
     );
   });
 

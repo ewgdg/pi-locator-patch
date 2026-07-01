@@ -46,12 +46,7 @@ import {
   getVisibleOutputOverflow,
   type VisibleOutputOverflow,
 } from "../output-size.js";
-import {
-  normalizeMarkerlessLocator,
-  type MarkerlessLocatorKind,
-  type MarkerlessLocatorOption,
-  type ParsePatchOptions,
-} from "../patch-format.js";
+import { type ParsePatchOptions } from "../patch-format.js";
 import { parseText, serializeText } from "../text-lines.js";
 import {
   parsePatchInput,
@@ -66,253 +61,229 @@ import {
 } from "./patch-render.js";
 import { dedentBlock } from "../dedent.js";
 
-const PATCH_PARAMETER_DESCRIPTION = dedentBlock(`
-  <description>
-  Inline patch text. Mutually exclusive with \`patch_file\`.
-  ## File Sections
-  A patch may contain multiple \`*** Add File\`, \`*** Update File\`, and \`*** Delete File\` sections;
-  A file section header includes a file path.
-  e.g. \`*** Add File: path/to/file.txt\`
-  ### Add File
-  \`Add File\` sections contain body rows only: \`+<text>\`. They do not use \`@@\` hunks.
-  ## Hunk Sections
-  Each \`Update File\` section may contain multiple \`@@\` hunks.
-  Within one \`Update File\` section, later hunks may match or span only untouched original target lines; they cannot anchor on or range across lines inserted or already used by earlier hunks. To make an edit depend on prior output, use a later \`*** Update File\` section for the same path.
-  Hunk headers are \`@@\`.
-  ### Line Anchor
-  A line anchor can be appended to a hunk header.
-  Line number is 1-based.
-  Line anchors define the allowed 1-based match span: [start, +inf) for \`@@ @<start>\`, or [start, end] for \`@@ @<start>...<end>\`.
-  ### Hunk Match
-  A hunk can contain line matchers.
-  The syntax for line matcher is \`<operator><locator_marker>[<locator_value>]\`.
-  Line matches in a hunk section are grouped to form a hunk match.
-  #### Match Operators
-  Match operator (\`<operator>\`) can be either "-" or a literal space " ".
-  When present, it is the first char of the line matcher.
-  "-" operator is required to delete the matched line.
-  space operator is a context-only noop for matching/anchoring only.
-  <shorthand>
-  For context locator rows, the space operator may be omitted.
-  e.g. \`^prefix\` is equivalent to \` ^prefix\`, and \`...\` is equivalent to \` ...\`.
-  </shorthand>
-  #### Locators
-  A locator identifies lines for context or deletion.
-  It always starts with a \`<locator_marker>\` and optionally a \`<locator_value>\`.
-  ##### Locator Markers
-  A \`<locator_marker>\` is used to specify the type of locator.
-  "^" specifies a prefix locator.
-  ":" specifies an exact text locator.
-  "$" specifies a suffix locator.
-  "*" specifies a contains locator.
-  "~" specifies an opt-in smart locator.
-  "#" specifies a hash locator when hash locators are enabled.
-  "?" specifies a combined locator.
-  "..." specifies a range locator.
-  <shorthand>
-  If no locator marker follows the operator, \`markerless_locator\` controls the row. Default \`exact\` preserves unified-diff exact text matching.
-  e.g. by default \` text\` is exact context and \`-text\` is exact delete.
-  With non-exact defaults, bare rows without operator are markerless context rows.
-  Bare exact context text without leading space, e.g. \`text\`, is invalid under default \`exact\`.
-  To match literal text starting with a reserved locator marker, keep an explicit locator marker.
-  </shorthand>
-  ##### Locator Values
-  \`^<prefix>\` matches by prefix string.
-  \`:<text>\` matches exact raw line text.
-  \`$<suffix>\` matches by suffix string.
-  \`*<text>\` matches by testing if a line contains the \`<text>\` value.
-  \`~<text>\` resolves independently per smart row to exact, prefix/suffix, contains, or line-level whitespace-delimited token-subsequence; the whole hunk applies only with one dominance winner.
-  \`#<hash>\` matches by line hash value when hash locators are enabled by \`receipt: "hash"\`, \`profile: "hash"\`, or \`markerless_locator: "hash"\`; use hash-line \`read\` under hash profile or prior hash receipts to get current hashes.
-  \`?<json-obj>\` is a combined locator.
-  \`...\` is a range locator; it has no \`<locator_value>\`.
-  e.g. \` ~<text>\` or \`~<text>\` means smart context match; \`-~<text>\` means smart delete match.
-  smart locator token-subsequence match requires at least two whitespace-delimited tokens.
-  ##### Range Locator
-  A range locator has to be used in-between other line matchers.
-  e.g. \` ...\` preserves/skips lines between surrounding matchers; \`-...\` deletes lines between surrounding matchers.
-  ##### Combined Locator
-  A combined locator uses a JSON object to specify locators to combine.
-  Currently, "prefix", "suffix", "contains" are the allowed locator keys.
-  "contains" key can be mapped to a string or an array of strings.
-  The JSON object must contain at least one key.
-  e.g. \`{"prefix":"a","contains":["b","c"],"suffix":"d"}\`
-  ### Insertion
-  Patch uses a leading "+" operator to insert lines.
-  The "+" char needs to be the first char of the line.
-  The syntax is \`+<text>\`, where \`<text>\` is a raw string for a line content.
-  Only hunk sections or \`Add File\` sections are allowed to insert lines.
-  </description>
+function buildPatchParameterDescription(profile: LocatorPatchProfile): string {
+  const hunkMatchDescription = indentNonBlankLines(buildPatchHunkMatchDescription(profile), "    ");
+  const profilePolicy = indentNonBlankLines(buildPatchProfilePolicy(profile), "    ");
+  const examples = indentNonBlankLines(buildPatchParameterExamples(profile), "    ");
+  return dedentBlock(`
+    <description>
+    Inline patch text. Mutually exclusive with \`patch_file\`.
+    ## File Sections
+    A patch may contain multiple \`*** Add File\`, \`*** Update File\`, and \`*** Delete File\` sections;
+    a file section header includes a file path.
+    e.g. \`*** Add File: path/to/file.txt\`
+    ### Add File
+    \`Add File\` sections contain body rows only: \`+<text>\`. They do not use \`@@\` hunks.
+    ## Hunk Sections
+    Each \`Update File\` section may contain multiple \`@@\` hunks.
+    Within one \`Update File\` section, later hunks may match or span only untouched original target lines; they cannot anchor on or range across lines inserted or already used by earlier hunks. To make an edit depend on prior output, use a later \`*** Update File\` section for the same path.
+    Hunk headers are \`@@\`.
+    ### Line Anchor
+    A line anchor can be appended to a hunk header.
+    Line number is 1-based.
+    Line anchors define the allowed 1-based match span: [start, +inf) for \`@@ @<start>\`, or [start, end] for \`@@ @<start>...<end>\`.
+${hunkMatchDescription}
+    ### Insertion
+    Patch uses a leading "+" operator to insert lines.
+    The "+" char must be first char of the line.
+    The syntax is \`+<text>\`, where \`<text>\` is raw line content.
+    Only hunk sections or \`Add File\` sections may insert lines.
+    </description>
 
-  <policy>
-  <important>Token efficiency is the highest priority.</important>
-  Use partial-match-based locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost — roughly >10 chars or >2 words.
-  Use hash locators only when hash locators are enabled and a hash is already known for a line.
-  Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in its hunk context.
-  <important>Use range locator whenever possible for hunks > 3 lines.</important>
-  Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
-  Avoid exact text locators and unified-diff format unless absolutely necessary to disambiguate hunk matches; prefer \`profile: "smart"\` or explicit \`~\` for markerless smart matching when safe.
-  Increasing the hunk context range with shorter locators for unambiguous anchoring is usually more efficient than using exact text matches or unified-diff for long lines.
-  If the tool returns a retry patch file containing large chunks of unapplied operations due to failures. Try fixing the retry patch file and passing it via \`patch_file\` instead of re-emitting large patch text to save tokens.
-  </policy>
-  
-  <caveats>
-  Only \`Update File\` section can have hunk match.
-  </caveats>
+    <policy>
+    <important>Token efficiency is the highest priority.</important>
+${profilePolicy}
+    <important>Use range locator whenever possible for hunks > 3 lines.</important>
+    Use line anchors to disambiguate only if the latest accurate line offset is available or add extra redundancy to the anchors.
+    If the tool returns a retry patch file containing large chunks of unapplied operations due to failures, fix the retry patch file and pass it via \`patch_file\` instead of re-emitting large patch text.
+    </policy>
 
-  <examples>
-    <example description="patch locator cost efficiency">
-      <content>
-      aaaaaaaaaab
-      aaaaacaaaaa
-      bbbbbbbbbba
-      </content>
-      <desired_content>
-      aaaaacaaaaa
-      new text
-      </desired_content>
-      <bad_patch_snippet>
-      -:aaaaaaaaaab
-       aaaaacaaaaa
-      -bbbbbbbbbba
-      +new text
-      </bad_patch_snippet>
-      <explanation>
-      Exact text match works, but is unnecessarily costly in this case.
-      Should use shorter locators like prefix or suffix locators.
-      </explanation>
+    <caveats>
+    Only \`Update File\` sections can have hunk matches.
+    </caveats>
+
+    <examples>
+${examples}
+    </examples>
+  `);
+}
+
+function indentNonBlankLines(text: string, indent: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line.length === 0 ? line : `${indent}${line}`))
+    .join("\n");
+}
+
+function buildPatchHunkMatchDescription(profile: LocatorPatchProfile): string {
+  if (profile === "smart") {
+    return dedentBlock(`
+      ### Hunk Match: Smart Profile
+      Context/delete rows use smart locators.
+      Use plain text rows for context and \`-<text>\` rows for deletes. Use \`-\` to delete a blank line.
+      Bare context rows may omit leading space.
+      Smart rows resolve independently to exact, prefix, suffix, contains, or whitespace token-subsequence match; the whole hunk applies only with one dominance winner.
+      Range rows are \`...\` for preserved/skipped context and \`-...\` for deleted ranges.
+    `);
+  }
+  if (profile === "hash") {
+    return dedentBlock(`
+      ### Hunk Match: Hash Profile
+      Context/delete rows identify lines by hash.
+      Copy only the 1- to 4-character hash from \`HASH│content\` read output, not the separator or content.
+      Use \`<hash>\` or \` <hash>\` for context and \`-<hash>\` for deletes.
+      Use only the hash characters from read output; omit \`#\`.
+      Range rows are \`...\` for preserved/skipped context and \`-...\` for deleted ranges.
+    `);
+  }
+  return dedentBlock(`
+    ### Hunk Match: Classic Profile
+    A hunk contains line matchers. Match operators are "-" for delete and literal space " " for context.
+    Context locator rows may omit the leading space when the row starts with a locator marker.
+    Locator markers:
+    - \`^<prefix>\`: prefix match
+    - \`:<text>\`: exact raw line match
+    - \`$<suffix>\`: suffix match
+    - \`*<text>\`: contains match
+    - \`~<text>\`: smart match
+    - \`#<hash>\`: hash match when hash locators are enabled by \`receipt: "hash"\` or hash profile
+    - \`?<json-obj>\`: combined locator with \`prefix\`, \`contains\`, and/or \`suffix\`
+    - \`...\`: range row; use \`...\` for context range and \`-...\` for delete range
+    If no locator marker follows the operator, classic profile uses exact unified-diff matching: \` text\` is exact context and \`-text\` is exact delete. Bare exact context text without leading space is invalid.
+  `);
+}
+
+function buildPatchProfilePolicy(profile: LocatorPatchProfile): string {
+  if (profile === "smart") {
+    return "Prefer short smart rows. Include enough neighboring smart context or an anchor hint when text may repeat.";
+  }
+  if (profile === "hash") {
+    return "Prefer the shortest unique hash width available from `read`. Use `...` ranges to avoid listing many unchanged/deleted hashes.";
+  }
+  return "Use partial-match-based locators when target/context lines are long enough that shortened prefix/suffix/contains saves more than patch locator marker cost. Use hash locators only when hash locators are enabled and a hash is already known. Use the shortest prefix/suffix/contains locator that uniquely identifies the target line in hunk context. Avoid exact text locators and unified-diff format unless needed to disambiguate hunk matches.";
+}
+
+function buildPatchParameterExamples(profile: LocatorPatchProfile): string {
+  if (profile === "smart") {
+    return dedentBlock(`
+      <example description="smart replacement">
       <patch>
       *** Update File: path/to/file.txt
       @@
-      -$b
-       *c
-      -^b
-      +new text
+      stable anchor
+      -old target words
+      +new target words
       </patch>
       <explanation>
-      "$b" locates first line that ends with "b"; this is better than "-:aaaaaaaaaab" bc it is shorter.
-      "*c" locates the second line that contains "c".
-      In this example, "..." could replace " *c" to preserve the middle line.
-      "^b" locates the third line starts with "b".
-      no need for exact match.
+      Smart matching picks exact/prefix/suffix/contains/subsequence as needed.
       </explanation>
-    </example>
-    <example description="blank line operations">
-      <content>
-      before
-
-
-      after
-      </content>
-      <patch description="delete one blank line and insert one at the end">
+      </example>
+      <example description="smart range deletion">
+      <patch>
       *** Update File: path/to/file.txt
       @@
-       :before
-       :
-      -:
-       :after
-      +
+      start line
+      -...
+      end line
       </patch>
       <explanation>
-      use " :" to match a blank context line, "-:" to delete a blank line, and "+" with no following text to insert a blank line.
+      Smart context rows anchor the range. \`-...\` deletes all matched lines between them.
       </explanation>
+      </example>
+    `);
+  }
+  if (profile === "hash") {
+    return dedentBlock(`
+      <example description="hash replacement">
+      <read_output>
+      a│old
+      b3│tail
+      </read_output>
+      <patch>
+      *** Update File: path/to/file.txt
+      @@
+      -a
+      +new
+      b3
+      </patch>
+      <explanation>
+      Hash profile rows use only the hash before \`│\`. Omit \`#\`.
+      </explanation>
+      </example>
+      <example description="hash range deletion">
+      <patch>
+      *** Update File: path/to/file.txt
+      @@
+      a
+      -...
+      z9
+      </patch>
+      <explanation>
+      \`a\` and \`z9\` are context hashes. \`-...\` deletes the range between them.
+      </explanation>
+      </example>
+    `);
+  }
+  return dedentBlock(`
+    <example description="patch locator cost efficiency">
+    <content>
+    aaaaaaaaaab
+    aaaaacaaaaa
+    bbbbbbbbbba
+    </content>
+    <desired_content>
+    aaaaacaaaaa
+    new text
+    </desired_content>
+    <bad_patch_snippet>
+    -:aaaaaaaaaab
+     aaaaacaaaaa
+    -bbbbbbbbbba
+    +new text
+    </bad_patch_snippet>
+    <explanation>
+    Exact text match works, but costs more than shorter locators.
+    </explanation>
+    <patch>
+    *** Update File: path/to/file.txt
+    @@
+    -$b
+     *c
+    -^b
+    +new text
+    </patch>
+    <explanation>
+    \`$b\` matches a line ending with b. \`*c\` matches a line containing c. \`^b\` matches a line starting with b.
+    </explanation>
+    </example>
+    <example description="blank line operations">
+    <patch>
+    *** Update File: path/to/file.txt
+    @@
+     :before
+     :
+    -:
+     :after
+    +
+    </patch>
+    <explanation>
+    Use \` :\` to match a blank context line, \`-:\` to delete a blank line, and \`+\` to insert a blank line.
+    </explanation>
     </example>
     <example description="range selection">
-      <content>
-      aaa
-      bbb
-      ccc
-      ddd
-      eee
-      fff
-      </content>
-      <bad_patch_snippet>
-      -aaa
-      -bbb
-      -ccc
-      -ddd
-      -eee
-      -fff
-      </bad_patch_snippet>
-      <explanation>
-      works but waste tokens on unnecessary locators.
-      range selection is enough to target the hunk.
-      </explanation>
-      <good_patch_snippet description="bulk delete all">
-      -^a
-      -...
-      -^f
-      </good_patch_snippet>
-      <explanation>
-      find a hunk with first line starts with "a" and last line starts with "f".
-      delete the first line and last line.
-      delete lines in-between first and last line using range locator.
-      </explanation>
+    <patch>
+    *** Update File: path/to/file.txt
+    @@
+    -^a
+    -...
+    -^f
+    </patch>
+    <explanation>
+    Delete first and last matched lines, and delete all lines between them with \`-...\`.
+    </explanation>
     </example>
-    <example description="disambiguate from duplicate lines">
-      <content>
-      aaa
-      aaa
-      ccc
-      ccc
-      </content>
-      <bad_patch_snippet>
-      aaa
-      +bbb
-      </bad_patch_snippet>
-      <explanation>
-      "aaa" is invalid, it does not have an operator as the first char.
-      </explanation>
-      <ok_patch_snippet>
-      @@ @2
-       ^a
-      +bbb
-      </ok_patch_snippet>
-      <explanation>
-      use line anchor "@2" to search at or after line 2.
-      so it can locate the only match for "aaa" at line 2.
-      similarly, we can use "@2...2" to pin the line range to [2,2].
-      then insert a new line after.
-      </explanation>
-      <caveat>
-      use line anchors with cautiousness, any previous change might have shifted the line numbers.
-      do not use stale line numbers as anchor unless add redundancy on the anchors.
-      </caveat>
-      <good_patch_snippet>
-       ^a
-      +bbb
-       ^c
-      </good_patch_snippet>
-      <explanation>
-      find a hunk with adjacent "aaa" and "ccc" lines.
-      insert a new line "bbb" in-between.
-      </explanation>
-    </example>
-    <example description="unified-diff edge cases">
-      <content>
-      :leading colon
-      </content>
-      <bad_patch_snippet>
-      -:leading colon
-      </bad_patch_snippet>
-      <explanation>
-      "-:" is treated as exact text locator instead of unified-diff to match the text "leading colon", missing the first ":".
-      There is no way to use unified-diff format to match leading ":".
-      </explanation>
-      <ok_patch_snippet>
-      -::leading colon
-      </ok_patch_snippet>
-      <explanation>
-      leading "-:" is to delete the exact match.
-      </explanation>
-      <good_patch_snippet>
-      -^:l
-      </good_patch_snippet>
-      <explanation>
-      spend less tokens with shorter locator.
-      </explanation>
-    </example>
-  </examples>
-`);
+  `);
+}
 
 interface PatchStatusDecision {
   text: string;
@@ -349,7 +320,6 @@ interface PatchExecutionOptions {
 }
 
 interface PatchProfileDefaults {
-  markerlessLocator: MarkerlessLocatorKind;
   receipt: PatchReceiptMode;
 }
 
@@ -357,9 +327,9 @@ const PATCH_PROFILE_DEFAULTS: Record<
   LocatorPatchProfile,
   PatchProfileDefaults
 > = {
-  classic: { markerlessLocator: "exact", receipt: "status" },
-  smart: { markerlessLocator: "smart", receipt: "status" },
-  hash: { markerlessLocator: "hash", receipt: "hash" },
+  classic: { receipt: "status" },
+  smart: { receipt: "status" },
+  hash: { receipt: "hash" },
 };
 
 export const patchTool = defineTool({
@@ -476,7 +446,7 @@ function buildPatchToolParameters(profile: LocatorPatchProfile) {
     {
       patch: Type.Optional(
         Type.String({
-          description: PATCH_PARAMETER_DESCRIPTION,
+          description: buildPatchParameterDescription(profile),
         }),
       ),
       patch_file: Type.Optional(
@@ -490,21 +460,6 @@ function buildPatchToolParameters(profile: LocatorPatchProfile) {
           description: "Validate/apply in memory and do not write.",
         }),
       ),
-      markerless_locator: Type.Optional(
-        Type.Union(
-          [
-            Type.Literal("exact"),
-            Type.Literal("unified-diff"),
-            Type.Literal("smart"),
-            Type.Literal("hash"),
-            Type.Literal("prefix"),
-            Type.Literal("contains"),
-          ],
-          {
-            description: buildMarkerlessLocatorDescription(profile),
-          },
-        ),
-      ),
       receipt: Type.Optional(
         Type.Union([Type.Literal("status"), Type.Literal("hash")], {
           description:
@@ -516,57 +471,42 @@ function buildPatchToolParameters(profile: LocatorPatchProfile) {
   );
 }
 
-function buildMarkerlessLocatorDescription(profile: LocatorPatchProfile): string {
-  const defaultLocator = PATCH_PROFILE_DEFAULTS[profile].markerlessLocator;
-  if (profile === "hash") {
-    return `Markerless locator for context/delete rows without a locator marker. Current profile: hash; default: ${defaultLocator}. Hash profile enforces strict hash rows, so this option does not permit text locator rows.`;
-  }
-  return `Markerless locator for context/delete rows without a locator marker. Current profile: ${profile}; default: ${defaultLocator}. Override for this call.`;
-}
-
 function buildPatchPromptGuidelines(profile: LocatorPatchProfile): string[] {
   const guidelines = [];
   if (profile === "hash") {
     guidelines.push(
-      "Hash profile active: update hunk rows are strict: use only hash locators (`#a`, `-#b3`, or markerless hashes), ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes, inserted-line hashes. Treat patch receipt as current state for touched hunks.",
+      "Hash profile active: update hunk rows use hashes: use `a`, `-b3`, ranges (`...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.",
     );
   } else if (profile === "smart") {
     guidelines.push(
-      "Patch tool smart profile active: markerless context/delete rows default to smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.",
+      "Patch tool smart profile active: context/delete rows use smart locators; `read` remains plain text; patch success returns compact status rows unless overridden.",
     );
   } else {
     guidelines.push(
-      "Patch tool classic profile active: markerless context/delete rows default to exact unified-diff behavior; hash locators and hash receipts require per-call opt-in.",
+      "Patch tool classic profile active: context/delete rows without locator markers use exact unified-diff behavior; hash locators and hash receipts require `receipt: \"hash\"` or hash profile.",
     );
   }
   guidelines.push(
-    profile === "hash"
-      ? "Hash profile uses strict hash-only rows unless per-call `markerless_locator` overrides markerless context/delete parsing."
-      : "Patch uses configured `profile` (`classic`, `smart`, `hash`) plus per-call `markerless_locator` override for markerless context/delete rows. Explicit locator markers always override defaults.",
+    profile === "classic"
+      ? "Classic profile supports explicit locator markers (`:`, `^`, `*`, `$`, `?`, `~`, and hash `#` when hash receipt is enabled)."
+      : "Profile controls context/delete row parsing; no per-call row-parsing override exists.",
   );
   return guidelines;
 }
 
 function resolvePatchExecutionOptions(
   params: {
-    markerless_locator?: MarkerlessLocatorOption;
     receipt?: PatchReceiptMode;
   },
   config: LocatorPatchConfig,
 ): PatchExecutionOptions {
   const profileDefaults = PATCH_PROFILE_DEFAULTS[config.profile];
-  const markerlessLocator = normalizeMarkerlessLocator(
-    params.markerless_locator ?? profileDefaults?.markerlessLocator ?? "exact",
-  );
   const receipt = params.receipt ?? profileDefaults?.receipt ?? "status";
   return {
     parseOptions: {
-      markerlessLocator,
-      strictHashRows: config.profile === "hash" && params.markerless_locator === undefined,
-      hashLocatorsEnabled:
-        config.profile === "hash" ||
-        receipt === "hash" ||
-        markerlessLocator === "hash",
+      profile: config.profile,
+      strictHashRows: config.profile === "hash",
+      hashLocatorsEnabled: config.profile === "hash" || receipt === "hash",
     },
     receipt,
   };

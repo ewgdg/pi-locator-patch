@@ -210,8 +210,8 @@ describe("patch parser", () => {
     expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
   });
 
-  it("parses markerless rows with the configured smart markerless locator", () => {
-    const parsed = parsePatch(["@@", "target text", "-old text", "+new"].join("\n"), undefined, 0, { markerlessLocator: "smart" });
+  it("parses markerless rows with the smart profile", () => {
+    const parsed = parsePatch(["@@", "target text", "-old text", "+new"].join("\n"), undefined, 0, { profile: "smart" });
 
     expect(parsed.hunks[0].ops).toMatchObject([
       { kind: "context", content: "target text", textSelector: "exact", smart: true },
@@ -220,26 +220,30 @@ describe("patch parser", () => {
     ]);
   });
 
-  it("parses markerless rows with prefix, contains, and hash markerless locators", () => {
+  it("parses blank smart locator rows", () => {
+    expect(parsePatch(["@@", "before", "-", "after"].join("\n"), undefined, 0, { profile: "smart" }).hunks[0].ops).toMatchObject([
+      { kind: "context", content: "before", textSelector: "exact", smart: true },
+      { kind: "delete", content: "", textSelector: "exact", smart: true },
+      { kind: "context", content: "after", textSelector: "exact", smart: true }
+    ]);
+    expect(parsePatch(["@@", " ~", "-~"].join("\n")).hunks[0].ops).toMatchObject([
+      { kind: "context", content: "", textSelector: "exact", smart: true },
+      { kind: "delete", content: "", textSelector: "exact", smart: true }
+    ]);
+  });
+
+  it("parses markerless rows with the hash profile", () => {
     const hash = hashLine("old").slice(0, 4);
 
-    expect(parsePatch("@@\nanchor\n-old", undefined, 0, { markerlessLocator: "prefix" }).hunks[0].ops).toMatchObject([
-      { kind: "context", content: "anchor", textSelector: "prefix" },
-      { kind: "delete", content: "old", textSelector: "prefix" }
-    ]);
-    expect(parsePatch("@@\nneedle\n-old", undefined, 0, { markerlessLocator: "contains" }).hunks[0].ops).toMatchObject([
-      { kind: "context", content: "needle", textSelector: "contains" },
-      { kind: "delete", content: "old", textSelector: "contains" }
-    ]);
-    expect(parsePatch(`@@\n${hash}\n-${hash}`, undefined, 0, { markerlessLocator: "hash" }).hunks[0].ops).toMatchObject([
+    expect(parsePatch(`@@\n${hash}\n-${hash}`, undefined, 0, { profile: "hash" }).hunks[0].ops).toMatchObject([
       { kind: "context", hash },
       { kind: "delete", hash }
     ]);
   });
 
-  it("keeps exact default behavior and rejects malformed markerless hashes", () => {
-    expect(() => parsePatch("@@\ncontext", undefined, 0, { markerlessLocator: "exact" })).toThrow("[E_INVALID_PATCH]");
-    expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { markerlessLocator: "hash" })).toThrow("Malformed context hash locator");
+  it("keeps classic default behavior and rejects malformed hash profile rows", () => {
+    expect(() => parsePatch("@@\ncontext")).toThrow("[E_INVALID_PATCH]");
+    expect(() => parsePatch("@@\nnot-a-hash", undefined, 0, { profile: "hash" })).toThrow("Malformed context hash locator");
   });
 
   it("allows only hash, range, and insert rows in strict hash mode", () => {
@@ -299,10 +303,12 @@ describe("patch parser", () => {
     ]);
   });
 
-  it("rejects empty smart locators", () => {
-    expect(() => parsePatch("@@\n ~")).toThrow("Line 2: Malformed context smart locator. Expected non-empty text after ~.");
-    expect(() => parsePatch("@@\n~")).toThrow("Line 2: Malformed context smart locator. Expected non-empty text after ~.");
-    expect(() => parsePatch("@@\n-~")).toThrow("Line 2: Malformed delete smart locator. Expected non-empty text after ~.");
+  it("accepts explicit empty smart locators", () => {
+    expect(parsePatch(["@@", " ~", "~", "-~"].join("\n")).hunks[0].ops).toMatchObject([
+      { kind: "context", content: "", textSelector: "exact", smart: true },
+      { kind: "context", content: "", textSelector: "exact", smart: true },
+      { kind: "delete", content: "", textSelector: "exact", smart: true }
+    ]);
   });
 
 });

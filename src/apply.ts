@@ -77,7 +77,6 @@ const SMART_MATCH_RANKS: Record<SmartMatcherKind, number> = {
   subsequence: 3
 };
 const SMART_MATCH_CANDIDATE_LIMIT = 1000;
-const MIN_USEFUL_SMART_QUERY_LENGTH = 3;
 
 interface ResolvedHunkMatch {
   match: SparseMatch;
@@ -329,21 +328,16 @@ function textSelectorMatches(content: string, op: MatchPatchOp): boolean {
 
 function bestSmartMatcherKind(query: string, targetLine: string): SmartMatcherKind | undefined {
   if (targetLine === query) return "exact";
-  if (isUsefulBroadSmartQuery(query) && targetLine.startsWith(query)) return "prefix";
-  if (isUsefulBroadSmartQuery(query) && targetLine.endsWith(query)) return "suffix";
-  if (isUsefulBroadSmartQuery(query) && targetLine.includes(query)) return "contains";
+  if (query.length > 0 && targetLine.startsWith(query)) return "prefix";
+  if (query.length > 0 && targetLine.endsWith(query)) return "suffix";
+  if (query.length > 0 && targetLine.includes(query)) return "contains";
   if (smartTokenSubsequenceMatches(targetLine, query)) return "subsequence";
   return undefined;
 }
 
-function isUsefulBroadSmartQuery(query: string): boolean {
-  const trimmed = query.trim();
-  return trimmed.length >= MIN_USEFUL_SMART_QUERY_LENGTH && /[A-Za-z0-9]/.test(trimmed);
-}
-
 function smartTokenSubsequenceMatches(content: string, query: string): boolean {
   const queryTokens = tokenizeSmartLocator(query);
-  if (queryTokens.length < 2 || !isUsefulBroadSmartQuery(query)) return false;
+  if (queryTokens.length < 1) return false;
 
   const targetTokens = tokenizeSmartLocator(content);
   let targetIndex = 0;
@@ -356,7 +350,7 @@ function smartTokenSubsequenceMatches(content: string, query: string): boolean {
 }
 
 function tokenizeSmartLocator(text: string): string[] {
-  return text.trim().split(/\s+/).filter((token) => token.length > 0);
+  return text.split(/\s+/).filter((token) => token.length > 0);
 }
 
 function combinedSelectorMatches(content: string, selector: NonNullable<MatchPatchOp["combinedSelector"]>): boolean {
@@ -529,8 +523,8 @@ function validateHunkAnchorHint(hunk: Hunk, hunkIndex: number): void {
 
 function validateNoConflictingLocators(hunk: Hunk, hunkIndex: number): void {
   for (const op of hunk.ops) {
-    if (isMatchOp(op) && op.smart === true && (op.content === undefined || op.content.length === 0)) {
-      throw new InvalidPatchError(`Hunk ${hunkIndex} smart locators require non-empty text content.`, patchErrorLocation(op, hunk));
+    if (isMatchOp(op) && op.smart === true && op.content === undefined) {
+      throw new InvalidPatchError(`Hunk ${hunkIndex} smart locators require text content.`, patchErrorLocation(op, hunk));
     }
     if (isMatchOp(op) && op.hash !== undefined && (op.content !== undefined || op.combinedSelector !== undefined)) {
       throw new InvalidPatchError(`Hunk ${hunkIndex} hash+text locators are not supported. Use hash-only or text-only locator.`, patchErrorLocation(op, hunk));

@@ -57,18 +57,17 @@ export interface Patch {
   hunks: Hunk[];
 }
 
-export type MarkerlessLocatorKind = "exact" | "smart" | "hash" | "prefix" | "contains";
-export type MarkerlessLocatorOption = MarkerlessLocatorKind | "unified-diff";
+export type PatchParseProfile = "classic" | "smart" | "hash";
 
 export interface ParsePatchOptions {
   hashLocatorsEnabled?: boolean;
-  markerlessLocator?: MarkerlessLocatorOption;
+  profile?: PatchParseProfile;
   strictHashRows?: boolean;
 }
 
 interface NormalizedParsePatchOptions {
   hashLocatorsEnabled: boolean;
-  markerlessLocator: MarkerlessLocatorKind;
+  profile: PatchParseProfile;
   strictHashRows: boolean;
 }
 
@@ -130,19 +129,15 @@ interface PatchOperationLine {
 }
 
 function normalizeParsePatchOptions(options: ParsePatchOptions): NormalizedParsePatchOptions {
+  const profile = options.profile ?? "classic";
+  if (profile !== "classic" && profile !== "smart" && profile !== "hash") {
+    throw new InvalidPatchError(`Unsupported patch parse profile: ${String(profile)}.`);
+  }
   return {
     hashLocatorsEnabled: options.hashLocatorsEnabled ?? true,
-    markerlessLocator: normalizeMarkerlessLocator(options.markerlessLocator ?? "exact"),
-    strictHashRows: options.strictHashRows ?? false
+    profile,
+    strictHashRows: options.strictHashRows ?? profile === "hash"
   };
-}
-
-export function normalizeMarkerlessLocator(locator: MarkerlessLocatorOption): MarkerlessLocatorKind {
-  if (locator === "unified-diff") return "exact";
-  if (locator === "exact" || locator === "smart" || locator === "hash" || locator === "prefix" || locator === "contains") {
-    return locator;
-  }
-  throw new InvalidPatchError(`Unsupported markerless locator: ${String(locator)}.`);
 }
 
 function parseHunkOperationLines(opLines: readonly PatchOperationLine[], hashFn: HashFunction, options: NormalizedParsePatchOptions): PatchOp[] {
@@ -168,16 +163,16 @@ function parseHunkOperationLine(line: string, hashFn: HashFunction, inputLine: n
     if (hasLocatorMarker(selector, options.hashLocatorsEnabled)) {
       return parseSelectorPatchOp(kind, selector, line, inputLine);
     }
-    if (options.markerlessLocator === "exact") {
+    if (options.profile === "classic") {
       return parseUnifiedDiffOp(line, hashFn, inputLine);
     }
-    return parseMarkerlessLocatorPatchOp(kind, selector, line, inputLine, options.markerlessLocator);
+    return parseSmartPatchOp(kind, selector, line, inputLine);
   }
   if (hasLocatorMarker(line, options.hashLocatorsEnabled)) {
     return parseSelectorPatchOp("context", line, line, inputLine);
   }
-  if (options.markerlessLocator !== "exact") {
-    return parseMarkerlessLocatorPatchOp("context", line, line, inputLine, options.markerlessLocator);
+  if (options.profile === "smart") {
+    return parseSmartPatchOp("context", line, line, inputLine);
   }
   return parsePatchOp(line, hashFn, inputLine);
 }
@@ -304,19 +299,7 @@ function parseSelectorPatchOp(kind: MatchPatchOpKind, selector: string, line: st
   throwRawTextSelectorError(kind, selector, line, inputLine);
 }
 
-function parseMarkerlessLocatorPatchOp(kind: MatchPatchOpKind, selector: string, line: string, inputLine: number, markerlessLocator: MarkerlessLocatorKind): PatchOp {
-  if (markerlessLocator === "smart") return parseSmartPatchOp(kind, selector, line, inputLine);
-  if (markerlessLocator === "hash") return parseHashPatchOp(kind, selector, line, inputLine);
-  if (markerlessLocator === "prefix") return parsePrefixPatchOp(kind, selector, line, inputLine);
-  if (markerlessLocator === "contains") return parseContainsPatchOp(kind, selector, line, inputLine);
-  return { kind, content: selector, textSelector: "exact", unifiedDiff: true, inputLine, authoredCharCount: line.length };
-}
-
-
 function parseSmartPatchOp(kind: MatchPatchOpKind, content: string, _line: string, inputLine: number): MatchPatchOp {
-  if (content.length === 0) {
-    throw new InvalidPatchError(`Malformed ${kind} smart locator. Expected non-empty text after ~.`, { inputLine });
-  }
   return { kind, content, textSelector: "exact", smart: true, inputLine, authoredCharCount: _line.length };
 }
 

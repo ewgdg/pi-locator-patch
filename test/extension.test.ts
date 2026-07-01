@@ -56,9 +56,8 @@ describe("extension registration", () => {
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "classic profile active",
       );
-      expect(markerlessLocatorDescription()).toContain(
-        "Current profile: classic; default: exact",
-      );
+      expect(patchParameterDescription()).toContain("Hunk Match: Classic Profile");
+      expect(patchParameterNames()).not.toContain("markerless_locator");
       expect(activeTools).not.toContain("write");
       expect(activeTools).not.toContain("edit");
       expect(activeTools).not.toContain("locator_read");
@@ -108,9 +107,9 @@ describe("extension registration", () => {
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "smart profile active",
       );
-      expect(markerlessLocatorDescription()).toContain(
-        "Current profile: smart; default: smart",
-      );
+      expect(patchParameterDescription()).toContain("Hunk Match: Smart Profile");
+      expect(patchParameterDescription()).not.toMatch(/\bmarker(?:less)?\b/i);
+      expect(patchParameterNames()).not.toContain("markerless_locator");
     } finally {
       restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
     }
@@ -155,9 +154,9 @@ describe("extension registration", () => {
       expect(patchTool.promptGuidelines?.join("\n")).toContain(
         "Hash profile active",
       );
-      expect(markerlessLocatorDescription()).toContain(
-        "Current profile: hash; default: hash",
-      );
+      expect(patchParameterDescription()).toContain("Hunk Match: Hash Profile");
+      expect(patchParameterDescription()).not.toMatch(/\bmarker(?:less)?\b/i);
+      expect(patchParameterNames()).not.toContain("markerless_locator");
     } finally {
       restoreEnv("PI_LOCATOR_PATCH_PROFILE", previousProfile);
     }
@@ -169,9 +168,14 @@ function restoreEnv(name: string, value: string | undefined): void {
   else process.env[name] = value;
 }
 
-function markerlessLocatorDescription(): string {
+function patchParameterDescription(): string {
   const parameters = patchTool.parameters as {
-    properties: { markerless_locator: { description?: string } };
+    properties: { patch: { description?: string } };
   };
-  return parameters.properties.markerless_locator.description ?? "";
+  return parameters.properties.patch.description ?? "";
+}
+
+function patchParameterNames(): string[] {
+  const parameters = patchTool.parameters as { properties: Record<string, unknown> };
+  return Object.keys(parameters.properties);
 }

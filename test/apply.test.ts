@@ -366,8 +366,8 @@ describe("applyPatchToText", () => {
     expect(result.hunkAudits[0].matcherKinds).toEqual(["exact"]);
   });
 
-  it("applies parsed markerless smart markerless locators", () => {
-    const parsed = parsePatch(["@@", "alpha exact", "-contains target", "+replacement"].join("\n"), undefined, 0, { markerlessLocator: "smart" });
+  it("applies parsed smart-profile markerless locators", () => {
+    const parsed = parsePatch(["@@", "alpha exact", "-contains target", "+replacement"].join("\n"), undefined, 0, { profile: "smart" });
     const result = applyPatchToText("alpha exact\nprefix contains target suffix", parsed);
 
     expect(result.text).toBe("alpha exact\nreplacement");
@@ -375,11 +375,29 @@ describe("applyPatchToText", () => {
     expect(result.hunkAudits[0].matcherKinds).toEqual(["exact", "contains"]);
   });
 
+  it("matches blank smart locators exactly", () => {
+    const parsed = parsePatch(["@@", "before", "-", "after"].join("\n"), undefined, 0, { profile: "smart" });
+    const profileResult = applyPatchToText("before\n\nafter", parsed);
+    const explicitResult = applyPatchToText("before\n\nafter", patch(" ~before", "-~", " ~after"));
+
+    expect(profileResult.text).toBe("before\nafter");
+    expect(profileResult.hunkAudits[0].matcherKinds).toEqual(["exact", "exact", "exact"]);
+    expect(explicitResult.text).toBe("before\nafter");
+    expect(explicitResult.hunkAudits[0].matcherKinds).toEqual(["exact", "exact", "exact"]);
+  });
+
   it("resolves each smart row independently and audits per-row matcher kind", () => {
     const result = applyPatchToText("alpha exact\nprefix contains target suffix", patch(" ~alpha exact", "-~contains target", "+replacement"));
 
     expect(result.text).toBe("alpha exact\nreplacement");
     expect(result.hunkAudits[0].matcherKinds).toEqual(["exact", "contains"]);
+  });
+
+  it("uses subsequence matching for locator whitespace drift", () => {
+    const result = applyPatchToText("${profilePolicy}", patch("-~    ${profilePolicy}", "+replacement"));
+
+    expect(result.text).toBe("replacement");
+    expect(result.hunkAudits[0].matcherKinds).toEqual(["subsequence"]);
   });
 
   it("throws ambiguous when smart candidates trade off stronger rows", () => {
@@ -438,10 +456,15 @@ describe("applyPatchToText", () => {
     expect(sparse.hunkAudits[0].matcherKinds).toEqual(["prefix", "range", "prefix"]);
   });
 
-  it("guards broad smart tiers and reports stale when no tier is useful", () => {
-    expect(() => applyPatchToText("xx", patch("-~x"))).toThrow(StaleHunkError);
+  it("allows broad smart matching for short and punctuation queries", () => {
+    const prefixResult = applyPatchToText("xx", patch("-~x"));
+    const punctuationResult = applyPatchToText("--- x ---", patch("-~--- ---"));
+
+    expect(prefixResult.text).toBe("");
+    expect(prefixResult.hunkAudits[0].matcherKinds).toEqual(["prefix"]);
     expect(() => applyPatchToText("a b", patch("-~ab"))).toThrow(StaleHunkError);
-    expect(() => applyPatchToText("--- x ---", patch("-~--- ---"))).toThrow(StaleHunkError);
+    expect(punctuationResult.text).toBe("");
+    expect(punctuationResult.hunkAudits[0].matcherKinds).toEqual(["subsequence"]);
     expect(() => applyPatchToText("alpha middle beta", patch("-~alpha beta"))).not.toThrow();
   });
 
