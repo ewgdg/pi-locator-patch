@@ -16,7 +16,7 @@ Files are UTF-8 text. UTF-8 BOM is preserved for updates. Original first newline
 
 ## Universal patch
 
-Preferred `patch` input carries file paths in file operation sections. The tool accepts either inline `patch` text or `patch_file`; provide exactly one. `patch_file` paths resolve against the tool cwd; file paths inside the patch also resolve against cwd, not the patch file directory.
+Preferred `patch` input carries file paths in file operation sections. The tool accepts either inline `patch` text or `patch_file`; provide exactly one. `patch_file` paths resolve against the tool cwd; file paths inside the patch also resolve against cwd, not the patch file directory. Legacy `*** Begin Patch` / `*** End Patch` outer boundaries are accepted only as a matching outer pair; preferred input omits them.
 
 ```diff
 *** Add File: new.txt

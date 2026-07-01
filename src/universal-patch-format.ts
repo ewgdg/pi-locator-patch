@@ -57,13 +57,16 @@ const CLOSING_BOUNDARY = "*** End Patch";
 
 export function parseUniversalPatch(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {
   const { lines, lineOffset } = normalizePatchInput(patchText);
-  const hasBoundaries = lines[0] === OPENING_BOUNDARY;
-  if (hasBoundaries && lines.at(-1) !== CLOSING_BOUNDARY) {
+  const hasOpeningBoundary = lines[0] === OPENING_BOUNDARY;
+  const hasClosingBoundary = lines.at(-1) === CLOSING_BOUNDARY;
+  if (hasOpeningBoundary !== hasClosingBoundary) {
     throw new InvalidPatchError("Patch boundary is incomplete.", { inputLine: lineOffset + Math.max(lines.length, 1) });
   }
+  const hasBoundaries = hasOpeningBoundary;
 
   const startIndex = hasBoundaries ? 1 : 0;
   const endIndex = hasBoundaries ? lines.length - 1 : lines.length;
+  rejectStrayPatchBoundaries(lines, startIndex, endIndex, lineOffset);
 
   const operations: UniversalPatchOperation[] = [];
   const operationSources: UniversalPatchOperationSource[] = [];
@@ -89,6 +92,14 @@ export function parseUniversalPatch(patchText: string, hashFn: HashFunction = ha
     operations,
     source: { lines, hasBoundaries, bodyEndIndex: endIndex, operationSources },
   };
+}
+
+function rejectStrayPatchBoundaries(lines: readonly string[], startIndex: number, endIndex: number, lineOffset: number): void {
+  for (let index = startIndex; index < endIndex; index += 1) {
+    if (lines[index] === OPENING_BOUNDARY || lines[index] === CLOSING_BOUNDARY) {
+      throw new InvalidPatchError("Unexpected patch boundary. Use both outer boundaries or omit both.", { inputLine: lineOffset + index + 1 });
+    }
+  }
 }
 
 export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLine, options: ParsePatchOptions = {}): UniversalPatch {

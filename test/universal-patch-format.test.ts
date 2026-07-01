@@ -55,6 +55,27 @@ describe("universal patch parser", () => {
     expect(parsed.operations[0]).toMatchObject({ kind: "update", path: "existing.txt" });
   });
 
+  it("rejects stray patch boundaries", () => {
+    const closingOnly = [
+      "*** Update File: existing.txt",
+      "@@",
+      row("-", "old"),
+      row("+", "new"),
+      "*** End Patch"
+    ].join("\n");
+    const nestedClosing = [
+      "*** Begin Patch",
+      "*** Update File: existing.txt",
+      "@@",
+      row("-", "old"),
+      "*** End Patch",
+      "*** End Patch"
+    ].join("\n");
+
+    expect(() => parsePatchInput(closingOnly)).toThrow("Line 5: Patch boundary is incomplete.");
+    expect(() => parsePatchInput(nestedClosing)).toThrow("Line 5: Unexpected patch boundary.");
+  });
+
   it("keeps input line numbers for indented boundary-free patches", () => {
     const patch = `
       

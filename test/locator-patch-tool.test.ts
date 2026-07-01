@@ -1051,6 +1051,26 @@ describe("patch visible status", () => {
     );
   });
 
+  it("rejects a closing patch boundary without an opening boundary", async () => {
+    const dir = await makeTempDir();
+    const patch = [
+      "*** Update File: a.txt",
+      "@@",
+      "-missing",
+      "+replacement",
+      "*** End Patch",
+    ].join("\n");
+
+    const message = await rejectionMessage(
+      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+        cwd: dir,
+      } as never),
+    );
+
+    expect(message).toContain("[E_INVALID_PATCH] Line 5: Patch boundary is incomplete.");
+    await expect(readFile(retryPatchPathFrom(message), "utf8")).resolves.toBe(patch);
+  });
+
   it("does not let retry patch write failure mask the patch failure", async () => {
     const dir = await makePlainTempDir();
     const file = join(dir, "file.txt");
