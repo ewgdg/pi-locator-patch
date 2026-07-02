@@ -6,6 +6,8 @@ import { hashLine, parseText } from "../src/api.js";
 import { createPatchTool } from "../src/tools/selector-patch.js";
 
 const patchTool = createPatchTool("smart");
+const classicPatchTool = createPatchTool("classic");
+const profilePatchTool = createPatchTool("hash");
 
 async function makePlainTempDir() {
   const dir = await mkdtemp(join(tmpdir(), "pi-select-patch-"));
@@ -103,7 +105,7 @@ async function patchFile(initialText: string, diff: string, path = "file.txt") {
   const dir = await makeClassicTempDir();
   const file = join(dir, path);
   await writeFile(file, initialText);
-  const result = await patchTool.execute(
+  const result = await classicPatchTool.execute(
     "tool-call",
     {
       patch: diff.startsWith("*** Begin Patch")
@@ -129,7 +131,7 @@ describe("patch visible status", () => {
     const file = join(dir, "file.txt");
     await writeFile(file, "old\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       {
         patch: [
@@ -295,7 +297,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    await patchTool.execute(
+    await profilePatchTool.execute(
       "tool-call",
       { patch: validPatch },
       undefined,
@@ -312,7 +314,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
     await expect(
-      patchTool.execute(
+      profilePatchTool.execute(
         "tool-call",
         { patch: malformedPatch },
         undefined,
@@ -322,14 +324,14 @@ describe("patch visible status", () => {
     ).rejects.toThrow("[E_INVALID_PATCH]");
   });
 
-  it("uses configured smart profile as the patch default", async () => {
+  it("uses the tool's bound smart profile even if config changes before execute", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-select-patch");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       join(configDir, "config.json"),
-      JSON.stringify({ profile: "smart" }),
+      JSON.stringify({ profile: "hash" }),
     );
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const file = join(dir, "file.txt");
@@ -387,7 +389,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     await expect(
-      patchTool.execute(
+      profilePatchTool.execute(
         "tool-call",
         { patch, receipt: "status" },
         undefined,
@@ -400,7 +402,7 @@ describe("patch visible status", () => {
     );
   });
 
-  it("uses hash selectors and hash receipt with the configured hash profile", async () => {
+  it("uses hash selectors and hash receipt with the bound hash profile", async () => {
     const dir = await makePlainTempDir();
     const agentDir = join(dir, "agent");
     const configDir = join(agentDir, "extensions", "pi-select-patch");
@@ -422,7 +424,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -616,7 +618,7 @@ describe("patch visible status", () => {
       "+world",
       "*** End Patch",
     ].join("\n");
-    const addResult = await patchTool.execute(
+    const addResult = await profilePatchTool.execute(
       "tool-call",
       { patch: addPatch },
       undefined,
@@ -698,7 +700,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -734,7 +736,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -759,7 +761,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     await expect(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     ).rejects.toThrow("[E_FILE_TEXT]");
@@ -777,7 +779,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -806,7 +808,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -836,7 +838,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -871,7 +873,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -923,7 +925,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -945,7 +947,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -968,7 +970,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -996,7 +998,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -1021,7 +1023,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     );
@@ -1074,7 +1076,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     await expect(
-      patchTool.execute(
+      profilePatchTool.execute(
         "tool-call",
         { patch, dry_run: true },
         undefined,
@@ -1098,7 +1100,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch, dry_run: true },
       undefined,
@@ -1127,7 +1129,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    await patchTool.execute("tool-call", { patch }, undefined, undefined, {
+    await profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
       cwd: dir,
     } as never);
 
@@ -1150,7 +1152,7 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch },
       undefined,
@@ -1180,7 +1182,7 @@ describe("patch visible status", () => {
     const patchPath = join(dir, "change.patch");
     await writeFile(patchPath, patch);
 
-    const result = await patchTool.execute(
+    const result = await profilePatchTool.execute(
       "tool-call",
       { patch_file: "change.patch" },
       undefined,
@@ -1203,7 +1205,7 @@ describe("patch visible status", () => {
     await writeFile(join(dir, "change.patch"), patch);
 
     await expect(
-      patchTool.execute(
+      profilePatchTool.execute(
         "tool-call",
         { patch, patch_file: "change.patch" },
         undefined,
@@ -1212,7 +1214,7 @@ describe("patch visible status", () => {
       ),
     ).rejects.toThrow("[E_INVALID_PATCH]");
     await expect(
-      patchTool.execute(
+      profilePatchTool.execute(
         "tool-call",
         { patch_file: "missing.patch" },
         undefined,
@@ -1221,7 +1223,7 @@ describe("patch visible status", () => {
       ),
     ).rejects.toThrow("[E_FILE_TEXT]");
     await expect(
-      patchTool.execute("tool-call", {}, undefined, undefined, {
+      profilePatchTool.execute("tool-call", {}, undefined, undefined, {
         cwd: dir,
       } as never),
     ).rejects.toThrow("[E_INVALID_PATCH]");
@@ -1238,7 +1240,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     await expect(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     ).rejects.toThrow("[E_INVALID_PATCH] Line 2: Delete File sections are not supported.");
@@ -1258,7 +1260,7 @@ describe("patch visible status", () => {
     ].join("\n");
 
     await expect(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+      profilePatchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
     ).rejects.toThrow("[E_INVALID_PATCH] Line 2: Delete File sections are not supported.");

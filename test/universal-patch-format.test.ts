@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch } from "../src/api.js";
+import { copyUniversalPatchInputTail, hashLine, parsePatchInput, parseUniversalPatch } from "../src/api.js";
 
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
@@ -138,7 +138,7 @@ describe("universal patch parser", () => {
     expect(() => parseUniversalPatch(withBody)).toThrow("Line 2: Delete File sections are not supported.");
   });
 
-  it("serializes parsed operations as reusable universal patch text", () => {
+  it("copies authored retry patch tails without serializing parsed operations", () => {
     const source = [
       "*** Begin Patch",
       "*** Add File: added.txt",
@@ -157,44 +157,23 @@ describe("universal patch parser", () => {
       "*** End Patch"
     ].join("\n");
 
-    const serialized = serializeUniversalPatch(parseUniversalPatch(source).operations);
+    const parsed = parseUniversalPatch(source);
 
-    expect(serialized).toBe(source);
-    expect(serialized).toContain("@@ @3...9");
-    expect(serialized).toContain(` #${hashLine("ctx")}`);
-    expect(serialized).toContain(`-#${hashLine("old")}`);
-    expect(serialized).toContain(" ^ctx");
-    expect(serialized).toContain(" *middle");
-    expect(serialized).toContain(' ?{"prefix":"pre","contains":["mid"],"suffix":"suf"}');
-    expect(serialized).toContain(" $after");
-    expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update"]);
-  });
-
-  it("serializes hash profile retry patches with unified-diff context operators", () => {
-    const hash = hashLine("old").slice(0, 3);
-    const serialized = serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", hash }, { kind: "range", rangeKind: "context" }, { kind: "delete", hash }, { kind: "range", rangeKind: "delete" }] }] }
-      }
-    ], { profile: "hash" });
-
-    expect(serialized).toContain(`@@\n ${hash}\n ...\n-${hash}\n-...`);
-    expect(parseUniversalPatch(serialized, undefined, { profile: "hash" }).operations[0]).toMatchObject({ kind: "update" });
-  });
-
-  it("serializes smart profile retry patches with unified-diff context operators", () => {
-    const serialized = serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", content: "target", smart: true }, { kind: "range", rangeKind: "context" }, { kind: "delete", content: "old", smart: true }, { kind: "range", rangeKind: "delete" }] }] }
-      }
-    ], { profile: "smart" });
-
-    expect(serialized).toContain("@@\n target\n ...\n-old\n-...");
-    expect(parseUniversalPatch(serialized, undefined, { profile: "smart" }).operations[0]).toMatchObject({ kind: "update" });
+    expect(copyUniversalPatchInputTail(parsed, 1)).toBe([
+      "*** Begin Patch",
+      "*** Update File: existing.txt",
+      "@@ @3...9",
+      row(" ", "ctx"),
+      row("-", "old"),
+      " ^ctx",
+      " *middle",
+      ' ?{"prefix":"pre","contains":["mid"],"suffix":"suf"}',
+      " ...",
+      row("+", "new"),
+      "-...",
+      " $after",
+      "*** End Patch"
+    ].join("\n"));
   });
 
   it("accepts leading-space context rows inside universal patches", () => {
@@ -211,116 +190,6 @@ describe("universal patch parser", () => {
       kind: "update",
       patch: { hunks: [{ ops: [{ kind: "context", content: "literal context" }] }] }
     });
-  });
-
-  it("round-trips exact, prefix, contains, combined, and suffix text selectors with marker characters", () => {
-    const serialized = serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: {
-          hunks: [{
-            ops: [
-              { kind: "context", content: "^literal", textSelector: "exact" },
-              { kind: "delete", content: "literal$", textSelector: "exact" },
-              { kind: "context", content: "^suffix", textSelector: "suffix" },
-              { kind: "context", content: "middle", textSelector: "contains" },
-              { kind: "delete", combinedSelector: { prefix: "$prefix", contains: ["middle"], suffix: "^suffix" } },
-              { kind: "delete", content: "$prefix", textSelector: "prefix" }
-            ]
-          }]
-        }
-      }
-    ]);
-
-    const [operation] = parseUniversalPatch(serialized).operations;
-    expect(operation).toMatchObject({
-      kind: "update",
-      patch: {
-        hunks: [{
-          ops: [
-            { kind: "context", content: "^literal", textSelector: "exact" },
-            { kind: "delete", content: "literal$", textSelector: "exact" },
-            { kind: "context", content: "^suffix", textSelector: "suffix" },
-            { kind: "context", content: "middle", textSelector: "contains" },
-            { kind: "delete", combinedSelector: { prefix: "$prefix", contains: ["middle"], suffix: "^suffix" } },
-            { kind: "delete", content: "$prefix", textSelector: "prefix" }
-          ]
-        }]
-      }
-    });
-  });
-
-  it("rejects serializing invalid mixed selector operations", () => {
-    expect(() => serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", hash: hashLine("ctx"), content: "ctx" }] }] }
-      }
-    ])).toThrow("Hash+text selectors are not supported");
-
-    expect(() => serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", hash: hashLine("ctx"), combinedSelector: { contains: ["ctx"] } }] }] }
-      }
-    ])).toThrow("Hash+text selectors are not supported");
-
-    expect(() => serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", content: "ctx", combinedSelector: { contains: ["ctx"] } }] }] }
-      }
-    ])).toThrow("Mixed text selectors are not supported");
-
-    expect(() => serializeUniversalPatch([
-      {
-        kind: "update",
-        path: "existing.txt",
-        patch: { hunks: [{ ops: [{ kind: "context", combinedSelector: {} }] }] }
-      }
-    ])).toThrow("requires at least one");
-  });
-
-  it("round-trips smart selectors in universal patch serialization", () => {
-    const source = [
-      "*** Begin Patch",
-      "*** Update File: existing.txt",
-      "@@",
-      " ~smart context",
-      "-~smart delete",
-      "+~literal insert",
-      "*** End Patch"
-    ].join("\n");
-
-    const serialized = serializeUniversalPatch(parseUniversalPatch(source).operations);
-
-    expect(serialized).toBe(source);
-    const [operation] = parseUniversalPatch(serialized).operations;
-    expect(operation).toMatchObject({
-      kind: "update",
-      patch: { hunks: [{ ops: [
-        { kind: "context", content: "smart context", smart: true },
-        { kind: "delete", content: "smart delete", smart: true },
-        { kind: "insert", content: "~literal insert" }
-      ] }] }
-    });
-  });
-
-  it("serializes empty smart selectors", () => {
-    const source = [
-      "*** Begin Patch",
-      "*** Update File: existing.txt",
-      "@@",
-      " ~",
-      "-~",
-      "*** End Patch"
-    ].join("\n");
-
-    expect(serializeUniversalPatch(parseUniversalPatch(source).operations)).toBe(source);
   });
 
 });

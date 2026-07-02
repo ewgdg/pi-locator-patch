@@ -251,7 +251,7 @@ describe("patch renderer helpers", () => {
 
 
 
-  it("renders retry patch serialization failures in compact partial errors", () => {
+  it("renders retry patch copy failures in compact partial errors", () => {
     const rendered = buildPatchResultRenderText({
       resultText: [
         "[E_PARTIAL_PATCH] Patch stopped after 0 applied operations.",
@@ -262,7 +262,7 @@ describe("patch renderer helpers", () => {
         "[E_STALE_HUNK] Could not find hunk match.",
         "Skipped:",
         "(none)",
-        "Retry patch unavailable: serializer failed"
+        "Retry patch unavailable: copy failed"
       ].join("\n"),
       details: undefined,
       expanded: false,
@@ -271,7 +271,7 @@ describe("patch renderer helpers", () => {
       theme
     });
 
-    expect(rendered).toContain("Retry patch unavailable: serializer failed");
+    expect(rendered).toContain("Retry patch unavailable: copy failed");
   });
 
   it("renders error with input preview centered on reported line", () => {

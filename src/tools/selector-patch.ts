@@ -15,11 +15,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { applyPatchToText, type ApplyPatchResult } from "../apply.js";
-import {
-  readSelectorPatchConfig,
-  type SelectorPatchConfig,
-  type SelectorPatchProfile,
-} from "../config.js";
+import { type SelectorPatchProfile } from "../config.js";
 import {
   renderPatchHashReceiptDiffs,
   renderPatchTranscriptDiffs,
@@ -347,8 +343,7 @@ export function createPatchTool(profile: SelectorPatchProfile) {
       params.patch_file,
       ctx.cwd,
     );
-    const config = await readSelectorPatchConfig();
-    const executionOptions = resolvePatchExecutionOptions(params, config);
+    const executionOptions = resolvePatchExecutionOptions(params, profile);
     const universalPatch = await parsePatchInputWithRetryPatch(
       patchText,
       executionOptions.parseOptions,
@@ -494,14 +489,14 @@ function resolvePatchExecutionOptions(
   params: {
     receipt?: PatchReceiptMode;
   },
-  config: SelectorPatchConfig,
+  profile: SelectorPatchProfile,
 ): PatchExecutionOptions {
-  const profileDefaults = PATCH_PROFILE_DEFAULTS[config.profile];
+  const profileDefaults = PATCH_PROFILE_DEFAULTS[profile];
   const receipt = params.receipt ?? profileDefaults?.receipt ?? "status";
   return {
     parseOptions: {
-      profile: config.profile,
-      strictHashRows: config.profile === "hash",
+      profile,
+      strictHashRows: profile === "hash",
       hashSelectorsEnabled: receipt === "hash",
     },
     receipt,

@@ -1,7 +1,7 @@
 import { dedentBlockWithLineOffset } from "./dedent.js";
 import { InvalidPatchError } from "./errors.js";
 import { type HashFunction, hashLine } from "./hash.js";
-import { normalizeCombinedTextSelector, parsePatch, type ParsePatchOptions, type Patch, type PatchParseProfile } from "./patch-format.js";
+import { parsePatch, type ParsePatchOptions, type Patch } from "./patch-format.js";
 
 export type UniversalPatchOperation = AddFileOperation | UpdateFileOperation;
 
@@ -32,11 +32,6 @@ export interface UniversalPatchSource {
 
 export interface UniversalPatchOperationSource {
   startIndex: number;
-}
-
-export interface SerializeUniversalPatchOptions {
-  profile?: PatchParseProfile;
-  strictHashRows?: boolean;
 }
 
 type SectionKind = UniversalPatchOperation["kind"];
@@ -102,10 +97,6 @@ export function parsePatchInput(patchText: string, hashFn: HashFunction = hashLi
   return parseUniversalPatch(patchText, hashFn, options);
 }
 
-export function serializeUniversalPatch(operations: readonly UniversalPatchOperation[], options: SerializeUniversalPatchOptions = {}): string {
-  return ["*** Begin Patch", ...operations.flatMap((operation) => serializeOperation(operation, options)), "*** End Patch"].join("\n");
-}
-
 export function copyUniversalPatchInputTail(patch: UniversalPatch, startOperationIndex: number): string {
   if (!patch.source) {
     throw new InvalidPatchError("Retry patch source input was not retained.");
@@ -119,82 +110,6 @@ export function copyUniversalPatchInputTail(patch: UniversalPatch, startOperatio
     ? [OPENING_BOUNDARY, ...tailLines, CLOSING_BOUNDARY]
     : tailLines;
   return retryLines.join("\n");
-}
-
-function serializeOperation(operation: UniversalPatchOperation, options: SerializeUniversalPatchOptions): string[] {
-  if (operation.kind === "add") {
-    return [`*** Add File: ${operation.path}`, ...operation.lines.map((line) => `+${line}`)];
-  }
-  return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => [serializeHunkHeader(hunk), ...hunk.ops.map((op) => serializePatchOp(op, options))])];
-}
-
-function serializeHunkHeader(hunk: Patch["hunks"][number]): string {
-  if (!hunk.anchorHint) return "@@";
-  if (!Number.isSafeInteger(hunk.anchorHint.line) || hunk.anchorHint.line < 1) {
-    throw new InvalidPatchError("Hunk anchor hint line must be a safe positive integer.");
-  }
-  if (hunk.anchorHint.endLine === undefined) return `@@ @${hunk.anchorHint.line}`;
-  if (!Number.isSafeInteger(hunk.anchorHint.endLine) || hunk.anchorHint.endLine < 1 || hunk.anchorHint.line > hunk.anchorHint.endLine) {
-    throw new InvalidPatchError("Hunk anchor hint range must use safe positive integers with start less than or equal to end.");
-  }
-  return `@@ @${hunk.anchorHint.line}...${hunk.anchorHint.endLine}`;
-}
-
-function serializePatchOp(op: Patch["hunks"][number]["ops"][number], options: SerializeUniversalPatchOptions): string {
-  if (op.kind === "range") return rangePatchOp(op.rangeKind, options);
-  if (op.kind === "insert") return `+${op.content}`;
-  if (op.hash !== undefined && (op.content !== undefined || op.combinedSelector !== undefined)) {
-    throw new InvalidPatchError("Hash+text selectors are not supported; serialize hash-only or text-only patch operations.");
-  }
-  if (op.content !== undefined && op.combinedSelector !== undefined) {
-    throw new InvalidPatchError("Mixed text selectors are not supported; serialize exactly one text selector form.");
-  }
-  if (op.hash !== undefined) return `${hashPatchOpPrefix(op.kind, options)}${op.hash}`;
-  return serializeTextSelector(op, options);
-}
-
-function serializeTextSelector(op: Patch["hunks"][number]["ops"][number], options: SerializeUniversalPatchOptions): string {
-  if (op.kind === "insert" || op.kind === "range") return "";
-  if (op.combinedSelector !== undefined) {
-    const combinedSelector = normalizeCombinedTextSelector(op.combinedSelector, "Combined selector");
-    return `${op.kind === "context" ? " ?" : "-?"}${JSON.stringify(combinedSelector)}`;
-  }
-  if (op.smart === true) {
-    if (op.content === undefined) {
-      throw new InvalidPatchError("Smart selectors require text content.", { inputLine: op.inputLine });
-    }
-    if (usesSmartProfileRows(op, options)) return op.kind === "context" ? ` ${op.content}` : `-${op.content}`;
-    return `${op.kind === "context" ? " ~" : "-~"}${op.content}`;
-  }
-  if (op.textSelector === "prefix") return `${op.kind === "context" ? " ^" : "-^"}${op.content ?? ""}`;
-  if (op.textSelector === "contains") return `${op.kind === "context" ? " *" : "-*"}${op.content ?? ""}`;
-  if (op.textSelector === "suffix") return `${op.kind === "context" ? " $" : "-$"}${op.content ?? ""}`;
-  return `${textPatchOpPrefix(op.kind)}${op.content ?? ""}`;
-}
-
-function rangePatchOp(kind: "context" | "delete", options: SerializeUniversalPatchOptions): string {
-  return `${kind === "context" ? contextPrefix() : "-"}...`;
-}
-
-function textPatchOpPrefix(kind: "context" | "delete"): string {
-  return kind === "context" ? " :" : "-:";
-}
-
-function hashPatchOpPrefix(kind: "context" | "delete", options: SerializeUniversalPatchOptions): string {
-  if (usesStrictHashRows(options)) return kind === "context" ? " " : "-";
-  return kind === "context" ? " #" : "-#";
-}
-
-function contextPrefix(): string {
-  return " ";
-}
-
-function usesStrictHashRows(options: SerializeUniversalPatchOptions): boolean {
-  return options.strictHashRows === true || options.profile === "hash";
-}
-
-function usesSmartProfileRows(op: Patch["hunks"][number]["ops"][number], options: SerializeUniversalPatchOptions): boolean {
-  return op.kind !== "insert" && op.kind !== "range" && op.smart === true && options.profile === "smart";
 }
 
 function parseSection(header: SectionHeader, body: readonly string[], hashFn: HashFunction, bodyStartLine: number, options: ParsePatchOptions): UniversalPatchOperation {
