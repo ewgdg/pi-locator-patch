@@ -108,18 +108,21 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
   if (profile === "smart") {
     return dedentBlock(`
       ### Hunk Match: Smart Profile
-      Context/delete rows use smart selectors.
-      Use \` <selector>\` rows for context and \`-<selector>\` rows for deletes. Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
-      Smart selectors resolve independently through ranked resolver tiers: exact, prefix/suffix, contains, whitespace token-subsequence, then bounded fuzzy token-subsequence; prefix and suffix share the same rank. The whole hunk applies only with one dominance winner.
+      Context/delete rows use smart selectors after a required unified-diff operator.
+      Every hunk body row must start with an operator: literal space for context, \`-\` for delete, or \`+\` for insert.
+      Use \` <selector>\` rows for context and \`-<selector>\` rows for deletes. A bare selector line like \`selector text\` is invalid because it is missing the leading space operator.
+      Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
+      Smart selectors resolve independently through resolver tiers: exact, prefix/suffix, contains, whitespace token-subsequence, then bounded fuzzy token-subsequence; The whole hunk applies only with one dominance winner.
       Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
   }
   if (profile === "hash") {
     return dedentBlock(`
       ### Hunk Match: Hash Profile
-      Context/delete rows identify lines by hash after the unified-diff operator.
+      Context/delete rows identify lines by hash after a required unified-diff operator.
+      Every hunk body row must start with an operator: literal space for context, \`-\` for delete, or \`+\` for insert.
       Copy only the 1- to 4-character hash from \`HASH│content\` read output, not the separator or content.
-      Use \` <hash>\` for context and \`-<hash>\` for deletes.
+      Use \` <hash>\` for context and \`-<hash>\` for deletes. A bare hash line like \`abc\` is invalid because it is missing the leading space operator.
       Use only the hash characters from read output; omit \`#\`.
       Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
@@ -127,6 +130,7 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
   return dedentBlock(`
     ### Hunk Match: Classic Profile
     A hunk contains line matchers. A matcher / match row is operator plus selector.
+    Every hunk body row must start with an operator: literal space for context, "-" for delete, or "+" for insert.
     Match operators are "-" for delete and literal space " " for context. Insert rows use "+" plus literal content and have no selector.
     Context selector rows may omit the leading space when the row starts with a selector marker.
     Selector markers:
@@ -138,13 +142,13 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
     - \`#<hash>\`: hash match when hash selectors are enabled by \`receipt: "hash"\`
     - \`?<json-obj>\`: combined selector with \`prefix\`, \`contains\`, and/or \`suffix\`
     - \`...\`: range row; use \`...\` for context range and \`-...\` for delete range
-    If no selector marker follows the operator, classic profile uses exact unified-diff matching: \` text\` is exact context and \`-text\` is exact delete. Bare exact context text without leading space is invalid.
+    If no selector marker follows the operator, classic profile uses exact unified-diff matching: \` text\` is exact context and \`-text\` is exact delete. Bare exact context text like \`text\` is invalid because it is missing the leading space operator.
   `);
 }
 
 function buildPatchProfilePolicy(profile: SelectorPatchProfile): string {
   if (profile === "smart") {
-    return "Always use short selectors. Include enough neighboring smart context or an anchor hint when text may repeat. A common approach is to sample n words from a line to form a subsequence match, where n <= 0.5 * total word count.";
+    return "Always prefer short prefix or sampled-word subsequence selectors over full-line exact selectors. Include enough neighboring smart context or an anchor hint when text may repeat. Sample n words from a line to form a subsequence match, where n <= 0.5 * total word count. Use full-line exact selectors only when the target line is already short or needed to disambiguate.";
   }
   if (profile === "hash") {
     return "Prefer the shortest unique hash width available from `read`. Use ` ...`/`-...` ranges to avoid listing many unchanged/deleted hashes.";
@@ -173,12 +177,14 @@ function buildPatchParameterExamples(profile: SelectorPatchProfile): string {
       <patch>
       *** Update File: path/to/file.txt
       @@
-       start line
+       function test
+      -{
       -...
-       end line
+      -return result
+      -}
       </patch>
       <explanation>
-      Smart context rows anchor the range. \`-...\` deletes all matched lines between them.
+      Smart context selectors anchor the range. \`-...\` deletes all matched lines between them.
       </explanation>
       </example>
     `);
@@ -480,9 +486,9 @@ function buildPatchProfilePromptGuideline(profile: SelectorPatchProfile): string
     return "Hash profile active: update hunk rows use hashes after unified-diff operators: use ` a`, `-b3`, ranges (` ...`, `-...`), and inserts (`+literal`). `patch` success returns a compact hash-only receipt with context hashes and inserted-line hashes. Treat patch receipt as current state for touched hunks.";
   }
   if (profile === "smart") {
-    return "smart profile active: context/delete rows use unified-diff operators with smart selector text; `read` remains plain text; patch success returns compact status rows unless overridden.";
+    return "";
   }
-  return "classic profile active: context/delete rows without selector markers use exact unified-diff behavior; hash selectors and hash receipts require `receipt: \"hash\"`.";
+  return "";
 }
 
 function resolvePatchExecutionOptions(
