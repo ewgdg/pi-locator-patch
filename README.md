@@ -2,7 +2,7 @@
 
 Pi extension for token-efficient file edits using explicit selector patches.
 
-The package registers `patch` for multi-file add/update/delete patch application. Patch input uses file operation sections directly; legacy `*** Begin Patch` / `*** End Patch` boundaries are accepted only as a matching outer pair. Only `profile: "hash"` exposes the hash-line reader as `read`; otherwise `read_hash` stays hidden and built-in `read` stays active.
+The package registers `patch` for multi-file add/update patch application. Patch input uses file operation sections directly; legacy `*** Begin Patch` / `*** End Patch` boundaries are accepted only as a matching outer pair. Only `profile: "hash"` exposes the hash-line reader as `read`; otherwise `read_hash` stays hidden and built-in `read` stays active.
 
 Core design: keep patches short while staying exact. Use concise selectors and ` ...` / `-...` to skip or replace large unchanged ranges. Ambiguous or stale hunks fail instead of guessing.
 
@@ -55,14 +55,13 @@ Configured `profile` sets patch defaults. Classic profile is markerful: it parse
  ...
 +literal insertion after skipped context
  :end context text
-*** Delete File: old.txt
 ```
 
 ### File operations
 
 - `*** Add File: path` creates a new UTF-8 text file. Body rows must start with `+`; text after `+` is literal file content.
 - `*** Update File: path` applies selector hunks to an existing UTF-8 text file.
-- `*** Delete File: path` hard-deletes an existing regular text file. Delete sections have no body.
+- `*** Delete File: path` is not supported; use an explicit shell command for whole-file deletion when needed.
 
 Multiple operations may target the same path. File operations run in authored order, so a later `*** Update File` section can match output created by an earlier section.
 
@@ -117,8 +116,6 @@ With `profile: "hash"` or `receipt: "hash"`, success output is a compact hash-on
 @@ matched line 12 @@
  Abc1
 +Z9xQ
-*** Delete File: old.txt
-Deleted file
 ```
 
 If this receipt is too large, output falls back to compact status rows. Dry runs return the same receipt shape without writing. With status receipt, success output is compact status rows only.

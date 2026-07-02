@@ -99,11 +99,6 @@ export async function assertExistingTextFileMutationTarget(path: string): Promis
   return { realTargetPath, mode: existingStats.mode & 0o777 };
 }
 
-export async function deleteExistingRegularFile(path: string): Promise<void> {
-  const { realTargetPath } = await assertExistingTextFileMutationTarget(path);
-  await unlink(realTargetPath);
-}
-
 export async function assertNotDirectory(path: string): Promise<void> {
   const stats = await lstat(path).catch(() => undefined);
   if (stats?.isDirectory()) {

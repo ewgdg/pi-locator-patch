@@ -36,14 +36,14 @@ Preferred `patch` input carries file paths in file operation sections. The tool 
 -...
 +literal replacement content
  :end context text
-*** Delete File: old.txt
 ```
 
 Supported section headers:
 
 - `*** Add File: path`
 - `*** Update File: path`
-- `*** Delete File: path`
+
+`*** Delete File: path` is rejected. Use an explicit shell command for whole-file deletion when needed.
 
 Multiple operations may target the same path. File operations apply sequentially: earlier successful operations stay applied if a later non-dry operation fails, and later operations are skipped. During non-dry apply failures, the tool writes a retry patch by copying the authored failed operation plus skipped later operations, then includes its path in the error message. Parser failures write the raw malformed input as the retry patch so agents can fix it via `patch_file` without re-emitting the full patch. `dry_run: true` validates the full patch without writing.
 
@@ -136,16 +136,6 @@ after
 
 ```
 
-## Delete File
-
-Delete sections contain no body:
-
-```diff
-*** Delete File: old.txt
-```
-
-Delete is a hard delete of the resolved regular file after validation. Validation requires an existing UTF-8 text file. Visible status for delete is header plus `Deleted file`; deleted content is not visible.
-
 ## Success receipt
 
 With `profile: "hash"` or `receipt: "hash"`, `patch` success output is a compact hash-only receipt, not a full patched file:
@@ -158,15 +148,13 @@ With `profile: "hash"` or `receipt: "hash"`, `patch` success output is a compact
 @@ matched line 12 @@
  Abc1
 +Z9xQ
-*** Delete File: old.txt
-Deleted file
 ```
 
-Update receipts show hunk headers, surviving context line hashes, and inserted-line hashes. Deleted rows are omitted. Delete receipts show only the operation header and `Deleted file`. If the receipt exceeds visible output limits, the tool falls back to compact status rows with `Applied`, `Validated`, or `Deleted file`. With `receipt: "status"`, success output is compact status rows only.
+Update receipts show hunk headers, surviving context line hashes, and inserted-line hashes. Deleted rows are omitted. If the receipt exceeds visible output limits, the tool falls back to compact status rows with `Applied` or `Validated`. With `receipt: "status"`, success output is compact status rows only.
 
 ## `details.diff`
 
-Tool result details include `details.diff`: a human patch transcript for host/UI. Add entries show added input lines, update entries show resolved hunk transcript lines, and delete entries summarize deletion without dumping deleted content. This diff is not placed in model-visible output. Pi TUI human rendering reads this field and shows a colorized preview in collapsed mode, with a larger transcript view when expanded.
+Tool result details include `details.diff`: a human patch transcript for host/UI. Add entries show added input lines, and update entries show resolved hunk transcript lines. This diff is not placed in model-visible output. Pi TUI human rendering reads this field and shows a colorized preview in collapsed mode, with a larger transcript view when expanded.
 Tool result details also include `details.selectorEfficiency`, a selector-only authored-character count versus canonical unified-diff baseline. Insert rows are excluded. When selector cost is above 50% of baseline, successful model-visible output and Pi TUI rendering warn: `Warning: selector cost is <ratio>% of baseline. Use shorter selectors or ... ranges.`
 When patch execution fails, parser errors include an input line number. Pi TUI rendering shows the first error line plus a bounded preview of the actual agent input (`patch` text, or the `patch_file` path); when a line number is available, the inline `patch` preview is centered around that line. Partial apply failures lift the `Failed:` operation and retry patch path above the input preview so the real cause is visible without expanding the tool result.
 

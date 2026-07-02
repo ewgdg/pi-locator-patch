@@ -33,7 +33,6 @@ import {
 import {
   assertExistingTextFileMutationTarget,
   assertNewTextFileTarget,
-  deleteExistingRegularFile,
   readExistingTextFile,
   resolveExistingRealPath,
   resolveToolPath,
@@ -71,7 +70,7 @@ function buildPatchParameterDescription(profile: SelectorPatchProfile): string {
     Inline patch text. Mutually exclusive with \`patch_file\`.
     No outer wrapper; start directly with a file section header. File sections have no closing delimiter; the next file section header or end of input ends the current section.
     ## File Sections
-    A patch may contain multiple \`*** Add File\`, \`*** Update File\`, and \`*** Delete File\` sections;
+    A patch may contain multiple \`*** Add File\` and \`*** Update File\` sections;
     a file section header includes a file path.
     e.g. \`*** Add File: path/to/file.txt\`
     ### Add File
@@ -333,7 +332,7 @@ export function createPatchTool(profile: SelectorPatchProfile) {
     name: "patch",
     label: "Select Patch",
     description:
-      "Token-efficient tool for editing files with multi-file-capable add/update/delete patches.",
+      "Token-efficient tool for editing files with multi-file-capable add/update patches.",
     promptSnippet:
       "Use this tool for patching. Pick the selector costing the least.",
     promptGuidelines: buildPatchPromptGuidelines(profile),
@@ -665,16 +664,6 @@ async function planFileChangeForDryRun(
   }
 
   const oldText = await readDryRunExistingText(targetPath, state);
-  if (operation.kind === "delete") {
-    return {
-      operation: "delete",
-      patchPath: operation.path,
-      targetPath,
-      oldText,
-      newText: undefined,
-    };
-  }
-
   const applyResult = applyPatchToText(oldText, operation.patch);
   return {
     operation: "update",
@@ -725,10 +714,6 @@ function updateDryRunFileState(
   virtualFiles: Map<string, DryRunFileState>,
   change: PlannedFileChange,
 ): void {
-  if (change.operation === "delete") {
-    virtualFiles.set(change.targetPath, { exists: false });
-    return;
-  }
   virtualFiles.set(change.targetPath, {
     exists: true,
     text: change.newText ?? "",
@@ -829,10 +814,9 @@ function renderOperationHeader(operation: UniversalPatchOperation): string {
 
 function capitalizeOperation(
   operation: UniversalPatchOperation["kind"],
-): "Add" | "Update" | "Delete" {
+): "Add" | "Update" {
   if (operation === "add") return "Add";
-  if (operation === "update") return "Update";
-  return "Delete";
+  return "Update";
 }
 
 function formatCause(cause: unknown): string {
@@ -856,10 +840,7 @@ function buildPatchToolResult(
         path: change.targetPath,
         patchPath: change.patchPath,
         operation: change.operation,
-        lineCount:
-          change.operation === "delete"
-            ? 0
-            : parseText(change.newText ?? "").lines.length,
+        lineCount: parseText(change.newText ?? "").lines.length,
         audit: change.applyResult
           ? { hunkAudits: change.applyResult.hunkAudits }
           : undefined,
@@ -896,16 +877,6 @@ async function planFileChange(
     writable: true,
   });
 
-  if (operation.kind === "delete") {
-    return {
-      operation: "delete",
-      patchPath: operation.path,
-      targetPath,
-      oldText,
-      newText: undefined,
-    };
-  }
-
   const applyResult = applyPatchToText(oldText, operation.patch);
   return {
     operation: "update",
@@ -922,8 +893,6 @@ async function writePlannedChange(change: PlannedFileChange): Promise<void> {
     await writeNewTextFileAtomically(change.targetPath, change.newText ?? "");
   } else if (change.operation === "update") {
     await writeTextFileAtomically(change.targetPath, change.newText ?? "");
-  } else {
-    await deleteExistingRegularFile(change.targetPath);
   }
 }
 
@@ -986,13 +955,6 @@ function getFileChangeCharEfficiency(
     const chars = prefixedTextLinesCharCount(change.newText ?? "");
     return { patchChars: chars, baselineChars: chars };
   }
-  if (change.operation === "delete") {
-    return {
-      patchChars: 0,
-      baselineChars: prefixedTextLinesCharCount(change.oldText ?? ""),
-    };
-  }
-
   const hunkAudits = change.applyResult?.hunkAudits ?? [];
   return hunkAudits.reduce(
     (total, hunkAudit) => ({
@@ -1073,11 +1035,7 @@ function renderUniversalPatchStatus(
 }
 
 function renderFileStatus(change: PlannedFileChange, dryRun: boolean): string {
-  const status = dryRun
-    ? "Validated"
-    : change.operation === "delete"
-      ? "Deleted file"
-      : "Applied";
+  const status = dryRun ? "Validated" : "Applied";
   return [
     `*** ${capitalizeOperation(change.operation)} File: ${change.patchPath}`,
     status,

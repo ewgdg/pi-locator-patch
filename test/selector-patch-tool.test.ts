@@ -607,7 +607,7 @@ describe("patch visible status", () => {
       baselineChars: 9,
     });
   });
-  it("reports char efficiency for add, delete, range, and dry-run changes", async () => {
+  it("reports char efficiency for add, range, and dry-run changes", async () => {
     const addDir = await makeTempDir();
     const addPatch = [
       "*** Begin Patch",
@@ -622,21 +622,6 @@ describe("patch visible status", () => {
       undefined,
       undefined,
       { cwd: addDir } as never,
-    );
-
-    const deleteDir = await makeTempDir();
-    await writeFile(join(deleteDir, "delete.txt"), "a\nbb");
-    const deletePatch = [
-      "*** Begin Patch",
-      "*** Delete File: delete.txt",
-      "*** End Patch",
-    ].join("\n");
-    const deleteResult = await patchTool.execute(
-      "tool-call",
-      { patch: deletePatch },
-      undefined,
-      undefined,
-      { cwd: deleteDir } as never,
     );
 
     const rangeDir = await makePlainTempDir();
@@ -662,19 +647,11 @@ describe("patch visible status", () => {
       patchChars: 12,
       baselineChars: 12,
     });
-    expect(detailsCharEfficiency(deleteResult)).toEqual({
-      patchChars: 0,
-      baselineChars: 5,
-    });
     expect(detailsCharEfficiency(rangeResult)).toEqual({
       patchChars: 8,
       baselineChars: 8,
     });
     expect(detailsSelectorEfficiency(addResult)).toEqual({
-      patchChars: 0,
-      baselineChars: 0,
-    });
-    expect(detailsSelectorEfficiency(deleteResult)).toEqual({
       patchChars: 0,
       baselineChars: 0,
     });
@@ -957,14 +934,13 @@ describe("patch visible status", () => {
     expect(retryPatch).not.toContain("-#");
   });
 
-  it("keeps earlier aliased Delete File success and writes failed-tail retry patch", async () => {
+  it("rejects Delete File sections before writing any operation", async () => {
     const dir = await makeTempDir();
-    const target = join(dir, "doomed.txt");
-    await writeFile(target, "bye");
     const patch = [
       "*** Begin Patch",
+      "*** Add File: created.txt",
+      "+new",
       "*** Delete File: doomed.txt",
-      "*** Delete File: ./doomed.txt",
       "*** End Patch",
     ].join("\n");
 
@@ -973,12 +949,8 @@ describe("patch visible status", () => {
         cwd: dir,
       } as never),
     );
-    expect(message).toContain("[E_PARTIAL_PATCH]");
-    expect(message).toContain("Failed:\n*** Delete File: ./doomed.txt");
-    await expect(
-      readFile(retryPatchPathFrom(message), "utf8"),
-    ).resolves.toContain("*** Delete File: ./doomed.txt");
-    await expect(readFile(target, "utf8")).rejects.toThrow();
+    expect(message).toContain("[E_INVALID_PATCH] Line 4: Delete File sections are not supported.");
+    await expect(stat(join(dir, "created.txt"))).rejects.toThrow();
   });
 
   it("keeps earlier edits when a later file operation fails", async () => {
@@ -1012,27 +984,6 @@ describe("patch visible status", () => {
         "*** End Patch",
       ].join("\n"),
     );
-  });
-
-  it("keeps earlier additions when a later delete target fails", async () => {
-    const dir = await makeTempDir();
-    const patch = [
-      "*** Begin Patch",
-      "*** Add File: created.txt",
-      "+new",
-      "*** Delete File: missing.txt",
-      "*** End Patch",
-    ].join("\n");
-
-    const message = await rejectionMessage(
-      patchTool.execute("tool-call", { patch }, undefined, undefined, {
-        cwd: dir,
-      } as never),
-    );
-    expect(message).toContain("[E_PARTIAL_PATCH]");
-    expect(message).toContain("Applied:\n*** Add File: created.txt");
-    expect(message).toContain("Failed:\n*** Delete File: missing.txt");
-    await expect(stat(join(dir, "created.txt"))).resolves.toBeTruthy();
   });
 
   it("writes a raw retry patch when syntax parsing fails", async () => {
@@ -1276,7 +1227,7 @@ describe("patch visible status", () => {
     ).rejects.toThrow("[E_INVALID_PATCH]");
   });
 
-  it("hard-deletes a file with a Codex Delete File section", async () => {
+  it("rejects Delete File sections and leaves files unchanged", async () => {
     const dir = await makeTempDir();
     const target = join(dir, "doomed.txt");
     await writeFile(target, "a\nb");
@@ -1286,22 +1237,12 @@ describe("patch visible status", () => {
       "*** End Patch",
     ].join("\n");
 
-    const result = await patchTool.execute(
-      "tool-call",
-      { patch },
-      undefined,
-      undefined,
-      { cwd: dir } as never,
-    );
-
-    expect(resultText(result)).toBe(
-      ["*** Delete File: doomed.txt", "Deleted file"].join("\n"),
-    );
-    expect(resultText(result)).not.toContain("a");
-    expect(resultText(result)).not.toContain("b");
-    expect(detailsDiff(result)).toContain("--- a/doomed.txt");
-    expect(detailsDiff(result)).toContain("+++ /dev/null");
-    await expect(stat(target)).rejects.toThrow();
+    await expect(
+      patchTool.execute("tool-call", { patch }, undefined, undefined, {
+        cwd: dir,
+      } as never),
+    ).rejects.toThrow("[E_INVALID_PATCH] Line 2: Delete File sections are not supported.");
+    await expect(readFile(target, "utf8")).resolves.toBe("a\nb");
   });
 
   it("rejects Delete File sections with a body", async () => {
@@ -1320,7 +1261,7 @@ describe("patch visible status", () => {
       patchTool.execute("tool-call", { patch }, undefined, undefined, {
         cwd: dir,
       } as never),
-    ).rejects.toThrow("[E_INVALID_PATCH]");
+    ).rejects.toThrow("[E_INVALID_PATCH] Line 2: Delete File sections are not supported.");
     await expect(readFile(target, "utf8")).resolves.toBe("a\nb");
   });
 

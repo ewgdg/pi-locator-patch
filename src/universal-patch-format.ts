@@ -3,7 +3,7 @@ import { InvalidPatchError } from "./errors.js";
 import { type HashFunction, hashLine } from "./hash.js";
 import { normalizeCombinedTextSelector, parsePatch, type ParsePatchOptions, type Patch, type PatchParseProfile } from "./patch-format.js";
 
-export type UniversalPatchOperation = AddFileOperation | UpdateFileOperation | DeleteFileOperation;
+export type UniversalPatchOperation = AddFileOperation | UpdateFileOperation;
 
 export interface AddFileOperation {
   kind: "add";
@@ -16,11 +16,6 @@ export interface UpdateFileOperation {
   kind: "update";
   path: string;
   patch: Patch;
-}
-
-export interface DeleteFileOperation {
-  kind: "delete";
-  path: string;
 }
 
 export interface UniversalPatch {
@@ -51,7 +46,8 @@ interface SectionHeader {
   path: string;
 }
 
-const SECTION_HEADER_PATTERN = /^\*\*\* (Add|Update|Delete) File: (.+)$/;
+const SECTION_HEADER_PATTERN = /^\*\*\* (Add|Update) File: (.+)$/;
+const DELETE_SECTION_HEADER_PATTERN = /^\*\*\* Delete File: (.+)$/;
 const OPENING_BOUNDARY = "*** Begin Patch";
 const CLOSING_BOUNDARY = "*** End Patch";
 
@@ -128,9 +124,6 @@ export function copyUniversalPatchInputTail(patch: UniversalPatch, startOperatio
 function serializeOperation(operation: UniversalPatchOperation, options: SerializeUniversalPatchOptions): string[] {
   if (operation.kind === "add") {
     return [`*** Add File: ${operation.path}`, ...operation.lines.map((line) => `+${line}`)];
-  }
-  if (operation.kind === "delete") {
-    return [`*** Delete File: ${operation.path}`];
   }
   return [`*** Update File: ${operation.path}`, ...operation.patch.hunks.flatMap((hunk) => [serializeHunkHeader(hunk), ...hunk.ops.map((op) => serializePatchOp(op, options))])];
 }
@@ -210,11 +203,6 @@ function parseSection(header: SectionHeader, body: readonly string[], hashFn: Ha
     return { kind: "add", path: header.path, lines, finalNewline: addFileRequiresFinalNewline(lines) };
   }
 
-  if (header.kind === "delete") {
-    validateDeleteFileBody(body, bodyStartLine);
-    return { kind: "delete", path: header.path };
-  }
-
   const patch = parsePatch(body.join("\n"), hashFn, bodyStartLine - 1, options);
   return { kind: "update", path: header.path, patch };
 }
@@ -233,13 +221,10 @@ function addFileRequiresFinalNewline(lines: readonly string[]): boolean {
   return lines.at(-1) === "";
 }
 
-function validateDeleteFileBody(body: readonly string[], bodyStartLine: number): void {
-  if (body.length > 0) {
-    throw new InvalidPatchError("Delete File sections must not include hunks or body lines.", { inputLine: bodyStartLine });
-  }
-}
-
 function parseSectionHeader(line: string, inputLine: number): SectionHeader {
+  if (DELETE_SECTION_HEADER_PATTERN.test(line)) {
+    throw new InvalidPatchError("Delete File sections are not supported.", { inputLine });
+  }
   const match = SECTION_HEADER_PATTERN.exec(line);
   if (!match) {
     throw new InvalidPatchError("Expected file operation header.", { inputLine });
@@ -255,12 +240,11 @@ function parseSectionHeader(line: string, inputLine: number): SectionHeader {
 
 function sectionKind(rawKind: string): SectionKind {
   if (rawKind === "Add") return "add";
-  if (rawKind === "Update") return "update";
-  return "delete";
+  return "update";
 }
 
 function isSectionHeader(line: string): boolean {
-  return SECTION_HEADER_PATTERN.test(line);
+  return SECTION_HEADER_PATTERN.test(line) || DELETE_SECTION_HEADER_PATTERN.test(line);
 }
 
 function splitPatchLines(text: string): string[] {

@@ -2,7 +2,7 @@ import type { ApplyPatchResult, PatchTranscriptLine } from "./apply.js";
 import { hashLine } from "./hash.js";
 import { parseText } from "./text-lines.js";
 
-export type PatchTranscriptDiffKind = "add" | "update" | "delete";
+export type PatchTranscriptDiffKind = "add" | "update";
 
 export interface PatchTranscriptDiffInput {
   kind: PatchTranscriptDiffKind;
@@ -33,21 +33,17 @@ function renderOldPathHeader(input: PatchTranscriptDiffInput): string {
 }
 
 function renderNewPathHeader(input: PatchTranscriptDiffInput): string {
-  return `+++ ${input.kind === "delete" ? "/dev/null" : `b/${input.path}`}`;
+  return `+++ b/${input.path}`;
 }
 
 function renderUniversalPatchHeader(input: PatchTranscriptDiffInput): string {
-  const operation = input.kind === "add" ? "Add" : input.kind === "delete" ? "Delete" : "Update";
+  const operation = input.kind === "add" ? "Add" : "Update";
   return `*** ${operation} File: ${input.path}`;
 }
 
 function renderHashReceiptBody(input: PatchTranscriptDiffInput): string[] {
   if (input.kind === "add") {
     return ["@@ add file @@", ...parseText(input.newText ?? "").lines.map((line) => `+${hashLine(line)}`)];
-  }
-
-  if (input.kind === "delete") {
-    return ["Deleted file"];
   }
 
   if (!input.applyResult) {
@@ -71,10 +67,6 @@ function renderTranscriptBody(input: PatchTranscriptDiffInput): string[] {
     return ["@@ add file @@", ...parseText(input.newText ?? "").lines.map((line) => `+${line}`)];
   }
 
-  if (input.kind === "delete") {
-    return ["@@ delete file @@", `-${deletedFileSummary(input.oldText ?? "")}`];
-  }
-
   if (!input.applyResult) {
     throw new Error("Update diff transcript requires applyResult.");
   }
@@ -90,7 +82,3 @@ function renderTranscriptLine(line: PatchTranscriptLine): string {
   return `${prefix}${line.content}`;
 }
 
-function deletedFileSummary(text: string): string {
-  const lineCount = parseText(text).lines.length;
-  return `Deleted file (${lineCount} line${lineCount === 1 ? "" : "s"})`;
-}

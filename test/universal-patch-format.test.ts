@@ -4,7 +4,7 @@ import { hashLine, parsePatchInput, parseUniversalPatch, serializeUniversalPatch
 const row = (prefix: " " | "-" | "+", content: string) => prefix === "+" ? `${prefix}${content}` : `${prefix}#${hashLine(content)}`;
 
 describe("universal patch parser", () => {
-  it("accepts Codex-like add, update, and delete file sections", () => {
+  it("accepts Codex-like add and update file sections", () => {
     const patch = [
       "*** Begin Patch",
       "*** Add File: added.txt",
@@ -14,13 +14,12 @@ describe("universal patch parser", () => {
       "@@",
       row("-", "old"),
       row("+", "new"),
-      "*** Delete File: doomed.txt",
       "*** End Patch"
     ].join("\n");
 
     const parsed = parseUniversalPatch(patch);
 
-    expect(parsed.operations.map((operation) => operation.kind)).toEqual(["add", "update", "delete"]);
+    expect(parsed.operations.map((operation) => operation.kind)).toEqual(["add", "update"]);
     expect(parsed.operations[0]).toMatchObject({ kind: "add", path: "added.txt", lines: ["hello", "world"] });
   });
 
@@ -132,9 +131,11 @@ describe("universal patch parser", () => {
     expect(() => parseUniversalPatch(patch)).toThrow("Line 3: Add File body lines must start with +.");
   });
 
-  it("rejects delete sections with body lines", () => {
+  it("rejects Delete File sections", () => {
     const withBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "@@", row(" ", "ctx"), "*** End Patch"].join("\n");
-    expect(() => parseUniversalPatch(withBody)).toThrow("Line 3: Delete File sections must not include hunks or body lines.");
+    const withoutBody = ["*** Begin Patch", "*** Delete File: doomed.txt", "*** End Patch"].join("\n");
+    expect(() => parseUniversalPatch(withoutBody)).toThrow("Line 2: Delete File sections are not supported.");
+    expect(() => parseUniversalPatch(withBody)).toThrow("Line 2: Delete File sections are not supported.");
   });
 
   it("serializes parsed operations as reusable universal patch text", () => {
@@ -153,7 +154,6 @@ describe("universal patch parser", () => {
       row("+", "new"),
       "-...",
       " $after",
-      "*** Delete File: doomed.txt",
       "*** End Patch"
     ].join("\n");
 
@@ -167,7 +167,7 @@ describe("universal patch parser", () => {
     expect(serialized).toContain(" *middle");
     expect(serialized).toContain(' ?{"prefix":"pre","contains":["mid"],"suffix":"suf"}');
     expect(serialized).toContain(" $after");
-    expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update", "delete"]);
+    expect(parseUniversalPatch(serialized).operations.map((operation) => operation.kind)).toEqual(["add", "update"]);
   });
 
   it("serializes hash profile retry patches with unified-diff context operators", () => {
