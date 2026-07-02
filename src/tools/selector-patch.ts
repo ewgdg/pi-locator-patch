@@ -114,9 +114,8 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
     return dedentBlock(`
       ### Hunk Match: Smart Profile
       Context/delete rows use smart selectors.
-      Use \` <text>\` rows for context and \`-<text>\` rows for deletes. Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
-      Smart rows resolve independently to exact, prefix, suffix, contains, whitespace token-subsequence, or strict bounded fuzzy token-subsequence match; the whole hunk applies only with one dominance winner.
-      Fuzzy matching is last-tier, token-based, case-sensitive, and capped at 1 edit for tokens under 16 chars, 2 edits for longer tokens, and 2 total edits per selector.
+      Use \` <selector>\` rows for context and \`-<selector>\` rows for deletes. Use a blank hunk row or single-space row for blank context; use \`-\` to delete a blank line.
+      Smart selectors resolve independently through ranked resolver tiers: exact, prefix/suffix, contains, whitespace token-subsequence, then bounded fuzzy token-subsequence; prefix and suffix share the same rank. The whole hunk applies only with one dominance winner.
       Range rows are \` ...\` for preserved/skipped context and \`-...\` for deleted ranges.
     `);
   }
@@ -150,7 +149,7 @@ function buildPatchHunkMatchDescription(profile: SelectorPatchProfile): string {
 
 function buildPatchProfilePolicy(profile: SelectorPatchProfile): string {
   if (profile === "smart") {
-    return "Prefer short smart rows. Include enough neighboring smart context or an anchor hint when text may repeat.";
+    return "Always use short selectors. Include enough neighboring smart context or an anchor hint when text may repeat. A common approach is to sample n words from a line to form a subsequence match, where n <= 0.5 * total word count.";
   }
   if (profile === "hash") {
     return "Prefer the shortest unique hash width available from `read`. Use ` ...`/`-...` ranges to avoid listing many unchanged/deleted hashes.";
@@ -161,16 +160,18 @@ function buildPatchProfilePolicy(profile: SelectorPatchProfile): string {
 function buildPatchParameterExamples(profile: SelectorPatchProfile): string {
   if (profile === "smart") {
     return dedentBlock(`
-      <example description="smart replacement">
+      <example description="smart insertion">
+      <file_content>
+      This is a very long long long stable anchor
+      </file_content>
       <patch>
       *** Update File: path/to/file.txt
       @@
-       stable anchor
-      -old target words
-      +new target words
+       a long anchor
+      +new line
       </patch>
       <explanation>
-      Smart matching picks exact/prefix/suffix/contains/subsequence/fuzzy as needed.
+      "a long anchor" is a sampled selector: it uses selected words from the longer anchor line, then matches by token subsequence.
       </explanation>
       </example>
       <example description="smart range deletion">
